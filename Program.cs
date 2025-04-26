@@ -4,7 +4,10 @@ using WebCodeWorkExecutor.Authentication; // Your auth namespace
 using Microsoft.OpenApi.Models;
 using Azure.Storage.Blobs;
 using GenericRunnerApi.Services;
-using GenericRunnerApi.Dtos;
+using WebCodeWorkExecutor.Dtos;
+using WebCodeWorkExecutor.Services;
+using Azure.Storage.Blobs.Models;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 var logger = builder.Logging.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>(); // Get logger early for config phase
@@ -54,7 +57,7 @@ switch (configuredLanguage)
 {
     case "c":
         // Register the concrete implementation for the interface
-        builder.Services.AddScoped<ICodeExecutionLogic, CExecutionLogic>();
+        builder.Services.AddScoped<ICodeEvaluationLogic, CEvaluationLogic>();
         logger.LogInformation("Registered CExecutionLogic for ICodeExecutionLogic.");
         break;
     // case "python":
@@ -98,39 +101,103 @@ app.UseAuthorization();
 app.MapGet("/", () => $"Generic Runner API ({configuredLanguage}) - Running")
     .ExcludeFromDescription(); // Hide from Swagger
 
-app.MapPost("/compile", async (CompileRequest request, ICodeExecutionLogic executionLogic, ILogger<Program> logger) => // Inject Interface
+app.MapPost("/execute", async (
+    ExecuteRequest request,              // Request DTO with paths
+    ICodeEvaluationLogic evaluationLogic, // Injected language logic service
+    BlobServiceClient blobServiceClient,   // Inject Blob client HERE
+    IConfiguration configuration,         // Inject Configuration HERE
+    ILogger<Program> endpointLogger       // Inject Logger HERE (or specific controller logger)
+    ) =>
 {
-    logger.LogInformation("Compile request received for: {CodeFile}", request.CodeFileName);
+     endpointLogger.LogInformation("Execute request received for language: {Language}, CodeFile: {CodeFilePath}", request.Language, request.CodeFilePath);
+
+     string codeContent, inputContent, expectedOutputContent;
+     var containerName = configuration.GetValue<string>("AzureStorage:ContainerName");
+     if (string.IsNullOrEmpty(containerName))
+     {
+          endpointLogger.LogCritical("Azure Storage container name not configured.");
+          return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.InternalError, Message = "Storage container not configured." });
+          // Or Results.Problem(...) for 500
+     }
+     var containerClient = blobServiceClient.GetBlobContainerClient(containerName);
+
+     // 1. Fetch Files (moved from service to endpoint handler)
+     try
+     {
+         endpointLogger.LogDebug("Fetching files from blob storage...");
+         var fetchTasks = new[] {
+             FetchBlobContentAsync(containerClient, request.CodeFilePath, endpointLogger),
+             FetchBlobContentAsync(containerClient, request.InputFilePath, endpointLogger),
+             FetchBlobContentAsync(containerClient, request.ExpectedOutputFilePath, endpointLogger)
+         };
+         await Task.WhenAll(fetchTasks);
+         codeContent = await fetchTasks[0];
+         inputContent = await fetchTasks[1];
+         expectedOutputContent = await fetchTasks[2];
+          endpointLogger.LogDebug("Successfully fetched all required files.");
+     }
+     catch (FileNotFoundException ex) // Catch exception from helper
+     {
+         endpointLogger.LogError(ex, "Required file not found in blob storage.");
+         return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.FileError, Message = $"Required file not found: {ex.Message}" });
+         // Or Results.BadRequest / Results.NotFound
+     }
+     catch (Exception ex)
+     {
+          endpointLogger.LogError(ex, "Error fetching files from Azure Blob Storage.");
+          return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.FileError, Message = "Failed to fetch required files from storage." });
+          // Or Results.Problem(...) for 500
+     }
+
+     // 2. Call Evaluation Logic Service (now passing content)
+     try
+     {
+         endpointLogger.LogInformation("Calling evaluation logic for language {Language}", request.Language);
+         // Call the service with CONTENT, not the request DTO
+         var result = await evaluationLogic.EvaluateAsync(
+             codeContent,
+             inputContent,
+             expectedOutputContent,
+             request.TimeLimitSeconds,
+             workingDirectory // Pass the configured working directory
+             );
+         endpointLogger.LogInformation("Evaluation logic completed with status: {Status}", result.Status);
+         return Results.Ok(result); // Return the result from the service
+     }
+     catch (Exception ex)
+     {
+         endpointLogger.LogError(ex, "Unhandled exception during evaluation logic execution for CodeFile: {CodeFilePath}", request.CodeFilePath);
+         return Results.Ok(new ExecuteResponse{ Status = EvaluationStatus.InternalError, Message = "An unexpected internal error occurred during evaluation logic execution." });
+         // Or Results.Problem(...) for 500
+     }
+})
+.WithName("ExecuteCode").WithTags("Execution").RequireAuthorization("ApiKeyPolicy");
+
+app.Run();
+
+// --- Helper Function for Blob Fetching (can live in Program.cs or a helper class) ---
+async Task<string> FetchBlobContentAsync(BlobContainerClient containerClient, string blobPath, ILogger logger)
+{
+    if (string.IsNullOrWhiteSpace(blobPath)) throw new ArgumentNullException(nameof(blobPath));
+    logger.LogDebug("Fetching blob content from: {BlobPath}", blobPath);
+    var blobClient = containerClient.GetBlobClient(blobPath);
+
     try
     {
-        var result = await executionLogic.CompileAsync(request, workingDirectory); // Call service
-        return Results.Ok(result);
+         BlobDownloadStreamingResult downloadResult = await blobClient.DownloadStreamingAsync();
+         using (var reader = new StreamReader(downloadResult.Content, Encoding.UTF8))
+         {
+             return await reader.ReadToEndAsync();
+         }
+    }
+    catch (Azure.RequestFailedException rfEx) when (rfEx.Status == 404)
+    {
+         logger.LogError("Blob not found at path: {BlobPath}", blobPath);
+         throw new FileNotFoundException($"Blob not found: {blobPath}", blobPath, rfEx); // Throw specific exception
     }
     catch (Exception ex)
     {
-         logger.LogError(ex, "Unhandled exception during /compile for {CodeFile}", request.CodeFileName);
-         return Results.Problem("An unexpected error occurred during compilation.", statusCode: 500);
+         logger.LogError(ex, "Failed to download blob: {BlobPath}", blobPath);
+         throw; // Re-throw other exceptions
     }
-})
-.WithName("CompileCode").WithTags("Execution").RequireAuthorization("ApiKeyPolicy");
-
-app.MapPost("/run", async (RunRequest request, ICodeExecutionLogic executionLogic, ILogger<Program> logger) => // Inject Interface
-{
-     logger.LogInformation("Run request received for: {ExePath} with Input: {InputFile}", request.ExecutablePath, request.InputFileName ?? "None");
-    try
-    {
-         var result = await executionLogic.RunAsync(request, workingDirectory); // Call service
-         return Results.Ok(result);
-    }
-     catch (Exception ex)
-    {
-         logger.LogError(ex, "Unhandled exception during /run for {ExePath}", request.ExecutablePath);
-         return Results.Problem("An unexpected error occurred during execution.", statusCode: 500);
-    }
-})
-.WithName("RunCode").WithTags("Execution").RequireAuthorization("ApiKeyPolicy");
-
-
-
-
-app.Run();
+}
