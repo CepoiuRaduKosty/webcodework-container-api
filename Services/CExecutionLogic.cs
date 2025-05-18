@@ -18,141 +18,147 @@ namespace GenericRunnerApi.Services
             _logger = logger;
         }
 
-        public async Task<ExecuteResponse> EvaluateAsync(
+        public async Task<BatchExecuteResponse> EvaluateBatchAsync(
             string codeContent,
-            string inputContent,
-            string expectedOutputContent,
-            int timeLimitSeconds,
-            string workingDirectory
-            // int memoryLimitMB = 256 // Add later
-            )
+            List<TestCaseEvaluationData> testCasesData,
+            string workingDirectory)
         {
-            // Define local filenames within the working directory
             string codeFileName = "solution.c";
-            string inputFileName = "input.txt";
-            string expectedOutputFileName = "expected_output.txt";
             string outputExeName = "solution";
+            // Temporary local filenames for each test case run
+            string currentInputFileName = "current_input.txt";
+            string currentExpectedOutputFileName = "current_expected_output.txt";
+            string currentStdoutFileName = "current_program.stdout";
+            string currentStderrFileName = "current_program.stderr";
 
             string localCodePath = Path.Combine(workingDirectory, codeFileName);
-            string localInputPath = Path.Combine(workingDirectory, inputFileName);
-            string localExpectedOutputPath = Path.Combine(workingDirectory, expectedOutputFileName);
             string localExePath = Path.Combine(workingDirectory, outputExeName);
-            string localStdoutPath = Path.Combine(workingDirectory, "program.stdout");
-            string localStderrPath = Path.Combine(workingDirectory, "program.stderr");
             string localCompilerLogPath = Path.Combine(workingDirectory, "compiler.log");
 
+            var batchResponse = new BatchExecuteResponse();
+
+            // --- 1. Write Main Code File ---
             try
             {
-                // --- 1. Write Received Content to Local Files ---
-                _logger.LogDebug("Writing content to local files in {WorkingDirectory}...", workingDirectory);
-                // Use Task.WhenAll for parallel writing
-                var writeTasks = new[] {
-                     File.WriteAllTextAsync(localCodePath, codeContent, Encoding.UTF8),
-                     File.WriteAllTextAsync(localInputPath, inputContent, Encoding.UTF8),
-                     File.WriteAllTextAsync(localExpectedOutputPath, expectedOutputContent, Encoding.UTF8)
-                 };
-                await Task.WhenAll(writeTasks);
-                _logger.LogDebug("Finished writing content to local files.");
-
-
-                // --- 2. Compile (Logic remains the same, uses local paths) ---
-                _logger.LogInformation("Compiling {CodeFile}...", codeFileName);
-                if (File.Exists(localExePath)) File.Delete(localExePath);
-                if (File.Exists(localCompilerLogPath)) File.Delete(localCompilerLogPath);
-                string compileArgs = $"\"{localCodePath}\" -o \"{localExePath}\" -O2 -Wall -lm";
-                var (compileExitCode, compileStdOut, compileStdErr, __, ___) = await RunProcessAsync("gcc", compileArgs, workingDirectory, null, 15); // 15s compile timeout
-                string compilerOutput = $"Stdout:\n{compileStdOut}\nStderr:\n{compileStdErr}".Trim();
-                if (compileExitCode != 0)
-                {
-                    // Log the warning/error with details
-                    _logger.LogWarning("Compilation failed for {CodeFile}. Exit Code: {ExitCode}. Output:\n{CompilerOutput}",
-                        codeFileName, compileExitCode, compilerOutput);
-
-                    // Return immediately with CompileError status and the captured output
-                    return new ExecuteResponse
-                    {
-                        Status = EvaluationStatus.CompileError,
-                        CompilerOutput = compilerOutput, // Include compiler messages
-                        // Other fields remain null as execution/comparison didn't happen
-                        Stdout = null,
-                        Stderr = null,
-                        DurationMs = null,
-                        Message = "Compilation failed." // Optional concise message
-                    };
-                }
-                _logger.LogInformation("Compilation successful.");
-
-
-                // --- 3. Execute (Logic remains the same, uses local paths) ---
-                _logger.LogInformation("Executing {ExePath}...", outputExeName);
-                if (File.Exists(localStdoutPath)) File.Delete(localStdoutPath);
-                if (File.Exists(localStderrPath)) File.Delete(localStderrPath);
-                string runCommand = "timeout";
-                string runArgs = $"--signal=SIGKILL {timeLimitSeconds}s \"{localExePath}\"";
-                var (runExitCode, runStdOut, runStdErr, durationMs, timedOut) = await RunProcessAsync(
-                    runCommand, runArgs, workingDirectory, localInputPath, timeLimitSeconds + 2);
-                await File.WriteAllTextAsync(localStdoutPath, runStdOut); // Save actual stdout
-                await File.WriteAllTextAsync(localStderrPath, runStdErr); // Save actual stderr
-                _logger.LogInformation("Execution finished. Exit Code: {ExitCode}, TimedOut: {TimedOut}, Duration: {Duration}ms", runExitCode, timedOut, durationMs);
-                if (timedOut) return new ExecuteResponse { Status = EvaluationStatus.TimeLimitExceeded, DurationMs = durationMs, Stdout = runStdOut, Stderr = runStdErr };
-                if (runExitCode != 0) return new ExecuteResponse { Status = EvaluationStatus.RuntimeError, DurationMs = durationMs, Stdout = runStdOut, Stderr = runStdErr };
-
-
-                // --- 4. Compare Output (Logic remains the same, uses local path/variable) ---
-                _logger.LogInformation("Comparing output...");
-                string actualOutput = runStdOut; // Use captured stdout directly
-                                                 // Expected output is already in expectedOutputContent variable passed to the method
-                if (CompareOutputs(actualOutput, expectedOutputContent))
-                {
-                    // Outputs match
-                    _logger.LogInformation("Evaluation result: ACCEPTED");
-                    return new ExecuteResponse
-                    {
-                        Status = EvaluationStatus.Accepted,
-                        Stdout = actualOutput, // Include actual output
-                        Stderr = runStdErr,    // Include stderr (might be empty)
-                        DurationMs = durationMs, // Include duration
-                        // CompilerOutput, Message, ExitCode are typically null/irrelevant for ACCEPTED
-                    };
-                }
-                else
-                {
-                    // Outputs do not match
-                    _logger.LogInformation("Evaluation result: WRONG_ANSWER");
-                    return new ExecuteResponse
-                    {
-                        Status = EvaluationStatus.WrongAnswer,
-                        Stdout = actualOutput, // Include the INCORRECT actual output for debugging
-                        Stderr = runStdErr,    // Include stderr
-                        DurationMs = durationMs, // Include duration
-                        Message = "Output did not match expected output." // Optional message
-                                                                          // CompilerOutput, ExitCode are null/irrelevant here
-                    };
-                }
-            }
-            catch (FileNotFoundException fnfEx) // Catch local file issues
-            {
-                _logger.LogError(fnfEx, "File error during evaluation logic execution.");
-                return new ExecuteResponse { Status = EvaluationStatus.InternalError, Message = $"Internal error: {fnfEx.Message}" }; // Treat local file issues as internal
+                await File.WriteAllTextAsync(localCodePath, codeContent, Encoding.UTF8);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled internal error during evaluation logic.");
-                return new ExecuteResponse { Status = EvaluationStatus.InternalError, Message = $"Internal evaluation error: {ex.Message}" };
+                _logger.LogError(ex, "Failed to write solution code to local file {LocalCodePath}", localCodePath);
+                batchResponse.CompilationSuccess = false;
+                batchResponse.CompilerOutput = "Internal error: Failed to write solution code for compilation.";
+                batchResponse.TestCaseResults = testCasesData.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.InternalError, Message = "Setup failed." }).ToList();
+                return batchResponse;
             }
-            finally
-            {
-                // Clean up local files written by this method
-                SafelyDeleteFile(localCodePath);
-                SafelyDeleteFile(localInputPath);
-                SafelyDeleteFile(localExpectedOutputPath);
-                SafelyDeleteFile(localExePath);
-                SafelyDeleteFile(localStdoutPath);
-                SafelyDeleteFile(localStderrPath);
-                SafelyDeleteFile(localCompilerLogPath);
-            }
-        }
 
+            // --- 2. Compile Once ---
+            _logger.LogInformation("Compiling {CodeFile}...", codeFileName);
+            if (File.Exists(localExePath)) File.Delete(localExePath);
+            if (File.Exists(localCompilerLogPath)) File.Delete(localCompilerLogPath);
+
+            string compileArgs = $"\"{localCodePath}\" -o \"{localExePath}\" -O2 -Wall -lm";
+            var (compileExitCode, compileStdOut, compileStdErr, _, _) = await RunProcessAsync("gcc", compileArgs, workingDirectory, null, 30); // Increased compile timeout
+
+            batchResponse.CompilerOutput = $"Stdout:\n{compileStdOut}\nStderr:\n{compileStdErr}".Trim();
+            batchResponse.CompilationSuccess = compileExitCode == 0;
+
+            if (!batchResponse.CompilationSuccess)
+            {
+                _logger.LogWarning("Compilation failed. Exit Code: {ExitCode}. Output:\n{CompilerOutput}", compileExitCode, batchResponse.CompilerOutput);
+                // Populate all test case results with CompileError
+                batchResponse.TestCaseResults = testCasesData.Select(tc => new TestCaseResult
+                {
+                    TestCaseId = tc.TestCaseId,
+                    Status = EvaluationStatus.CompileError,
+                    Message = "Compilation failed."
+                }).ToList();
+                SafelyDeleteFile(localCodePath); // Clean up solution.c
+                return batchResponse;
+            }
+            _logger.LogInformation("Compilation successful.");
+
+            // --- 3. Run Each Test Case ---
+            foreach (var tcData in testCasesData)
+            {
+                _logger.LogInformation("Running test case (ID: {TestCaseId})...", tcData.TestCaseId ?? "N/A");
+                var currentLocalInputPath = Path.Combine(workingDirectory, currentInputFileName);
+                var currentLocalExpectedOutputPath = Path.Combine(workingDirectory, currentExpectedOutputFileName);
+                var currentLocalStdoutPath = Path.Combine(workingDirectory, currentStdoutFileName);
+                var currentLocalStderrPath = Path.Combine(workingDirectory, currentStderrFileName);
+
+                var tcResult = new TestCaseResult { TestCaseId = tcData.TestCaseId };
+
+                try
+                {
+                    // Write current test case input and expected output to local files
+                    await File.WriteAllTextAsync(currentLocalInputPath, tcData.InputContent, Encoding.UTF8);
+                    await File.WriteAllTextAsync(currentLocalExpectedOutputPath, tcData.ExpectedOutputContent, Encoding.UTF8);
+
+                    if (File.Exists(currentLocalStdoutPath)) File.Delete(currentLocalStdoutPath);
+                    if (File.Exists(currentLocalStderrPath)) File.Delete(currentLocalStderrPath);
+
+                    string runCommand = "timeout"; // timeout command from coreutils
+                    // Use tcData.TimeLimitMs (convert to seconds for timeout command)
+                    // Docker container memory limit is set by orchestrator.
+                    // Enforcing stricter per-test-case memory limits within the container
+                    // would require more complex OS-level tools (like cgroups directly, or 'prlimit').
+                    // For now, rely on Docker's overall container limit and specific time limit.
+                    int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1; // Ensure at least 1s for timeout command
+
+                    string runArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s \"{localExePath}\"";
+                    var (runExitCode, runStdOut, runStdErr, durationMs, timedOut) = await RunProcessAsync(
+                        runCommand, runArgs, workingDirectory, currentLocalInputPath, timeLimitForTimeoutCmd + 2); // Orchestrator timeout
+
+                    tcResult.Stdout = runStdOut.TrimEnd('\r', '\n');
+                    tcResult.Stderr = runStdErr.TrimEnd('\r', '\n');
+                    tcResult.DurationMs = durationMs;
+                    tcResult.ExitCode = runExitCode;
+
+                    if (timedOut)
+                    {
+                        tcResult.Status = EvaluationStatus.TimeLimitExceeded;
+                    }
+                    else if (runExitCode != 0)
+                    {
+                        tcResult.Status = EvaluationStatus.RuntimeError;
+                    }
+                    else
+                    {
+                        // Compare output
+                        if (CompareOutputs(runStdOut, tcData.ExpectedOutputContent))
+                        {
+                            tcResult.Status = EvaluationStatus.Accepted;
+                        }
+                        else
+                        {
+                            tcResult.Status = EvaluationStatus.WrongAnswer;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error running test case (ID: {TestCaseId})", tcData.TestCaseId ?? "N/A");
+                    tcResult.Status = EvaluationStatus.InternalError;
+                    tcResult.Message = $"Error during test case execution: {ex.Message}";
+                }
+                finally
+                {
+                    SafelyDeleteFile(currentLocalInputPath);
+                    SafelyDeleteFile(currentLocalExpectedOutputPath);
+                    SafelyDeleteFile(currentLocalStdoutPath);
+                    SafelyDeleteFile(currentLocalStderrPath);
+                }
+                batchResponse.TestCaseResults.Add(tcResult);
+            } // End foreach testcase
+
+            // Cleanup compiled executable and original source code file
+            SafelyDeleteFile(localCodePath);
+            SafelyDeleteFile(localExePath);
+            SafelyDeleteFile(localCompilerLogPath);
+
+            return batchResponse;
+        }
+        
         private async Task<(int ExitCode, string StdOut, string StdErr, long DurationMs, bool TimedOut)> RunProcessAsync(
                     string command, string args, string workingDir, string? stdInPath, int timeoutSeconds)
         {
@@ -213,7 +219,7 @@ namespace GenericRunnerApi.Services
                         {
                             process.Kill(entireProcessTree: true); // Force kill the timed-out process
                         }
-                        catch (Exception killEx) { _logger.LogError(killEx, "Failed to kill timed out process (PID: {ProcessId}).", process.Id);}
+                        catch (Exception killEx) { _logger.LogError(killEx, "Failed to kill timed out process (PID: {ProcessId}).", process.Id); }
                         exitCode = -1; // Indicate killed by timeout
                     }
                 }

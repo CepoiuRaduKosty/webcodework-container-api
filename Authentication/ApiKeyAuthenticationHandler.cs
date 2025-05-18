@@ -54,7 +54,7 @@ namespace WebCodeWorkExecutor.Authentication
             // 3. Compare the keys (Constant-time comparison is slightly better against timing attacks, but less critical for internal API keys)
             if (!string.Equals(providedApiKey, expectedApiKey, StringComparison.Ordinal)) // Use Ordinal for keys
             {
-                 _logger.LogWarning("Invalid API Key provided.");
+                 _logger.LogWarning($"Invalid API Key provided. Configured [{expectedApiKey}] ; Provided [{providedApiKey}]");
                  return Task.FromResult(AuthenticateResult.Fail("Invalid API Key provided."));
             }
 

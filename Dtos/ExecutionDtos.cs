@@ -3,49 +3,60 @@ using System.ComponentModel.DataAnnotations;
 
 namespace WebCodeWorkExecutor.Dtos
 {
-    /// <summary>
-    /// Request for the single evaluation endpoint.
-    /// Contains paths to files stored in configured blob storage.
-    /// </summary>
-    public class ExecuteRequest
+    public class BatchTestCaseItem
     {
         [Required]
-        public string Language { get; set; } = "c"; // Keep language info if needed internally
+        public string InputFilePath { get; set; } = string.Empty;
 
         [Required]
-        public string CodeFilePath { get; set; } = string.Empty; // e.g., "submissions/123/solution.c"
+        public string ExpectedOutputFilePath { get; set; } = string.Empty;
 
         [Required]
-        public string InputFilePath { get; set; } = string.Empty; // e.g., "testcases/10/input/abc.in"
+        [Range(100, 10000)] // Example: 100ms to 10s
+        public int TimeLimitMs { get; set; } = 2000;
 
         [Required]
-        public string ExpectedOutputFilePath { get; set; } = string.Empty; // e.g., "testcases/10/output/abc.out"
+        [Range(32, 512)]  // Example: 32MB to 512MB
+        public int MaxRamMB { get; set; } = 128;
 
-        [Range(1, 30)]
-        public int TimeLimitSeconds { get; set; } = 5;
-
-        // public int MemoryLimitMB { get; set; } = 256; // Add later if needed
+        public string? TestCaseId { get; set; } 
     }
 
-    /// <summary>
-    /// Response from the single evaluation endpoint.
-    /// Contains the final verdict and relevant output/errors.
-    /// </summary>
-    public class ExecuteResponse
+    public class BatchExecuteRequest
     {
         [Required]
-        public string Status { get; set; } = EvaluationStatus.InternalError; // Final Verdict
+        public string Language { get; set; } = "c"; 
 
-        public string? CompilerOutput { get; set; } // Output from compilation step
-        public string? Stdout { get; set; }         // Actual standard output from execution
-        public string? Stderr { get; set; }         // Actual standard error from execution
-        public string? Message { get; set; }        // Additional info/error details from runner
-        public long? DurationMs { get; set; }       // Execution duration
+        public string? Version { get; set; } 
+
+        [Required]
+        public string CodeFilePath { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(1, ErrorMessage = "At least one test case must be provided.")]
+        public List<BatchTestCaseItem> TestCases { get; set; } = new List<BatchTestCaseItem>();
     }
 
-    /// <summary>
-    /// Defines constant strings for final evaluation status.
-    /// </summary>
+    public class TestCaseResult
+    {
+        public string? TestCaseId { get; set; } 
+        [Required]
+        public string Status { get; set; } = EvaluationStatus.InternalError;
+        public string? Stdout { get; set; }
+        public string? Stderr { get; set; }
+        public long? DurationMs { get; set; }
+        public string? Message { get; set; } 
+        public int? ExitCode { get; set; }
+    }
+
+    public class BatchExecuteResponse
+    {
+        [Required]
+        public bool CompilationSuccess { get; set; }
+        public string? CompilerOutput { get; set; }
+        public List<TestCaseResult> TestCaseResults { get; set; } = new List<TestCaseResult>();
+    }
+
     public static class EvaluationStatus
     {
         public const string Accepted = "ACCEPTED";
@@ -53,8 +64,8 @@ namespace WebCodeWorkExecutor.Dtos
         public const string CompileError = "COMPILE_ERROR";
         public const string RuntimeError = "RUNTIME_ERROR";
         public const string TimeLimitExceeded = "TIME_LIMIT_EXCEEDED";
-        // public const string MemoryLimitExceeded = "MEMORY_LIMIT_EXCEEDED";
-        public const string FileError = "FILE_ERROR"; // Error fetching files
+        public const string MemoryLimitExceeded = "MEMORY_LIMIT_EXCEEDED";
+        public const string FileError = "FILE_ERROR"; 
         public const string InternalError = "INTERNAL_ERROR";
     }
 }

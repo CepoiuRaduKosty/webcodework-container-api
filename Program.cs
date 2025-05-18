@@ -8,6 +8,8 @@ using WebCodeWorkExecutor.Dtos;
 using WebCodeWorkExecutor.Services;
 using Azure.Storage.Blobs.Models;
 using System.Text;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 var logger = builder.Logging.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>(); // Get logger early for config phase
@@ -35,11 +37,13 @@ builder.Services.AddProblemDetails();
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
         ApiKeyAuthenticationDefaults.AuthenticationScheme, o => { });
-builder.Services.AddAuthorization(options => {
-     options.AddPolicy("ApiKeyPolicy", policy => {
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ApiKeyPolicy", policy =>
+    {
         policy.AddAuthenticationSchemes(ApiKeyAuthenticationDefaults.AuthenticationScheme);
         policy.RequireAuthenticatedUser();
-     });
+    });
 });
 
 // Swagger / OpenAPI
@@ -48,8 +52,26 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo { Title = $"Runner API ({configuredLanguage})", Version = "v1" });
     // Add API Key security definition for Swagger UI
-    options.AddSecurityDefinition(ApiKeyAuthenticationDefaults.AuthenticationScheme, new OpenApiSecurityScheme { /* ... Same as orchestrator ... */ });
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement { /* ... Same as orchestrator ... */ });
+    options.AddSecurityDefinition(ApiKeyAuthenticationDefaults.AuthenticationScheme, new OpenApiSecurityScheme
+    {
+        In = ParameterLocation.Header, // Expect the API key in the header
+        Description = "Please enter the API Key", // Description in Swagger UI
+        Name = "X-Api-Key", // The name of the header
+        Type = SecuritySchemeType.ApiKey, // Specifies it's an API key
+        Scheme = "ApiKeyScheme" // A descriptive scheme name (can be anything)
+    });
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement {
+    {
+        new OpenApiSecurityScheme
+        {
+            Reference = new OpenApiReference
+            {
+                Type = ReferenceType.SecurityScheme,
+                Id = ApiKeyAuthenticationDefaults.AuthenticationScheme // Reference the defined security scheme
+            }
+        },
+        new string[] {} // No specific scopes for API key
+    }});
 });
 
 // --- NEW: Register Language-Specific Execution Logic ---
@@ -70,11 +92,27 @@ switch (configuredLanguage)
         throw new NotSupportedException(errorMessage); // Fail fast on unsupported config
 }
 
-builder.Services.AddSingleton(sp => {
+builder.Services.AddSingleton(sp =>
+{
     var configuration = sp.GetRequiredService<IConfiguration>();
-    var connectionString = configuration.GetValue<string>("AzureStorage:ConnectionString");
-     if (string.IsNullOrEmpty(connectionString)) throw new InvalidOperationException("Azure Storage Connection String not configured.");
-     return new BlobServiceClient(connectionString);
+    var rootSection = builder.Configuration.GetChildren();
+    Console.WriteLine("Loaded Configuration Sections:");
+    foreach (var section in rootSection)
+    {
+        Console.WriteLine($"- {section.Key}");
+        foreach (var child in section.GetChildren())
+        {
+            Console.WriteLine($"  - {child.Key}: {child.Value}");
+        }
+    }
+    var azureStorageSection = configuration.GetSection("AzureStorage");
+    if (!azureStorageSection.Exists())
+    {
+        throw new InvalidOperationException("AzureStorage section not found in configuration.");
+    }
+    var connectionString = azureStorageSection.GetValue<string>("ConnectionString");
+    if (string.IsNullOrEmpty(connectionString)) throw new InvalidOperationException("Azure Storage Connection String not configured. Debug: " + configuration.GetValue<string>("ConnectionStrings:DefaultConnection"));
+    return new BlobServiceClient(connectionString);
 });
 // -----
 
@@ -87,7 +125,30 @@ var app = builder.Build();
     app.UseSwagger();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/swagger/v1/swagger.json", $"Runner API ({configuredLanguage}) v1"));
 }
-app.UseExceptionHandler();
+
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var exceptionHandlerPathFeature = context.Features.Get<IExceptionHandlerPathFeature>();
+        var exception = exceptionHandlerPathFeature?.Error;
+        var unhandledLogger = context.RequestServices.GetRequiredService<ILogger<Program>>(); // Get a logger instance
+
+        unhandledLogger.LogError(exception, "Global unhandled exception: {ErrorMessage}", exception?.Message);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title = $"Unhandled Exception in Runner: {exception?.GetType().Name}",
+            Instance = context.Request.Path,
+            Detail = exception?.ToString(), // Full exception details
+        };
+        await context.Response.WriteAsJsonAsync(problemDetails);
+    });
+});
 // No HTTPS redirection needed for internal API called directly via IP/localhost/container name
 // app.UseHttpsRedirection();
 
@@ -102,76 +163,101 @@ app.MapGet("/", () => $"Generic Runner API ({configuredLanguage}) - Running")
     .ExcludeFromDescription(); // Hide from Swagger
 
 app.MapPost("/execute", async (
-    ExecuteRequest request,              // Request DTO with paths
-    ICodeEvaluationLogic evaluationLogic, // Injected language logic service
-    BlobServiceClient blobServiceClient,   // Inject Blob client HERE
-    IConfiguration configuration,         // Inject Configuration HERE
-    ILogger<Program> endpointLogger       // Inject Logger HERE (or specific controller logger)
+    BatchExecuteRequest request,        // The new DTO with CodeFilePath and List<BatchTestCaseItem>
+    ICodeEvaluationLogic evaluationLogic,
+    BlobServiceClient blobServiceClient,
+    IConfiguration configuration,
+    ILogger<Program> endpointLogger
     ) =>
 {
-     endpointLogger.LogInformation("Execute request received for language: {Language}, CodeFile: {CodeFilePath}", request.Language, request.CodeFilePath);
+    endpointLogger.LogInformation("Batch execute request received for lang: {Lang}, code: {CodeFile}, TCs: {TCCount}",
+    request.Language, request.CodeFilePath, request.TestCases.Count);
 
-     string codeContent, inputContent, expectedOutputContent;
-     var containerName = configuration.GetValue<string>("AzureStorage:ContainerName");
-     if (string.IsNullOrEmpty(containerName))
-     {
-          endpointLogger.LogCritical("Azure Storage container name not configured.");
-          return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.InternalError, Message = "Storage container not configured." });
-          // Or Results.Problem(...) for 500
-     }
-     var containerClient = blobServiceClient.GetBlobContainerClient(containerName);
+    var containerName = configuration.GetValue<string>("AzureStorage:ContainerName");
+    if (string.IsNullOrEmpty(containerName))
+    {
+        endpointLogger.LogCritical("Azure Storage container name not configured.");
+        // Return a BatchExecuteResponse with internal error for all test cases
+        return Results.Ok(new BatchExecuteResponse
+        {
+            CompilationSuccess = false,
+            CompilerOutput = "Runner internal error: Storage container not configured.",
+            TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.InternalError, Message = "Storage not configured." }).ToList()
+        });
+    }
+    var containerClient = blobServiceClient.GetBlobContainerClient(containerName);
 
-     // 1. Fetch Files (moved from service to endpoint handler)
-     try
-     {
-         endpointLogger.LogDebug("Fetching files from blob storage...");
-         var fetchTasks = new[] {
-             FetchBlobContentAsync(containerClient, request.CodeFilePath, endpointLogger),
-             FetchBlobContentAsync(containerClient, request.InputFilePath, endpointLogger),
-             FetchBlobContentAsync(containerClient, request.ExpectedOutputFilePath, endpointLogger)
-         };
-         await Task.WhenAll(fetchTasks);
-         codeContent = await fetchTasks[0];
-         inputContent = await fetchTasks[1];
-         expectedOutputContent = await fetchTasks[2];
-          endpointLogger.LogDebug("Successfully fetched all required files.");
-     }
-     catch (FileNotFoundException ex) // Catch exception from helper
-     {
-         endpointLogger.LogError(ex, "Required file not found in blob storage.");
-         return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.FileError, Message = $"Required file not found: {ex.Message}" });
-         // Or Results.BadRequest / Results.NotFound
-     }
-     catch (Exception ex)
-     {
-          endpointLogger.LogError(ex, "Error fetching files from Azure Blob Storage.");
-          return Results.Ok(new ExecuteResponse { Status = EvaluationStatus.FileError, Message = "Failed to fetch required files from storage." });
-          // Or Results.Problem(...) for 500
-     }
+    string codeContent;
+    List<TestCaseEvaluationData> testCasesData = new List<TestCaseEvaluationData>();
 
-     // 2. Call Evaluation Logic Service (now passing content)
-     try
-     {
-         endpointLogger.LogInformation("Calling evaluation logic for language {Language}", request.Language);
-         // Call the service with CONTENT, not the request DTO
-         var result = await evaluationLogic.EvaluateAsync(
-             codeContent,
-             inputContent,
-             expectedOutputContent,
-             request.TimeLimitSeconds,
-             workingDirectory // Pass the configured working directory
-             );
-         endpointLogger.LogInformation("Evaluation logic completed with status: {Status}", result.Status);
-         return Results.Ok(result); // Return the result from the service
-     }
-     catch (Exception ex)
-     {
-         endpointLogger.LogError(ex, "Unhandled exception during evaluation logic execution for CodeFile: {CodeFilePath}", request.CodeFilePath);
-         return Results.Ok(new ExecuteResponse{ Status = EvaluationStatus.InternalError, Message = "An unexpected internal error occurred during evaluation logic execution." });
-         // Or Results.Problem(...) for 500
-     }
+    try
+    {
+        // 1. Fetch Main Code File Content
+        endpointLogger.LogDebug("Fetching code file from: {CodeFilePath}", request.CodeFilePath);
+        codeContent = await FetchBlobContentAsync(containerClient, request.CodeFilePath, endpointLogger);
+        endpointLogger.LogDebug("Code file fetched successfully.");
+
+        // 2. Fetch Content for Each Test Case
+        endpointLogger.LogDebug("Fetching content for {NumTestCases} test cases...", request.TestCases.Count);
+        foreach (var tcItem in request.TestCases)
+        {
+            string inputContent = await FetchBlobContentAsync(containerClient, tcItem.InputFilePath, endpointLogger);
+            string expectedOutputContent = await FetchBlobContentAsync(containerClient, tcItem.ExpectedOutputFilePath, endpointLogger);
+            testCasesData.Add(new TestCaseEvaluationData(
+                InputContent: inputContent,
+                ExpectedOutputContent: expectedOutputContent,
+                TimeLimitMs: tcItem.TimeLimitMs,
+                MaxRamMB: tcItem.MaxRamMB,
+                TestCaseId: tcItem.TestCaseId
+            ));
+        }
+        endpointLogger.LogDebug("All test case files fetched successfully.");
+    }
+    catch (FileNotFoundException ex)
+    {
+        endpointLogger.LogError(ex, "A required file was not found in blob storage.");
+        return Results.Ok(new BatchExecuteResponse
+        { // Return a BatchExecuteResponse indicating the error
+            CompilationSuccess = false,
+            CompilerOutput = $"File error: {ex.Message}",
+            TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.FileError, Message = $"File missing: {ex.FileName}" }).ToList()
+        });
+    }
+    catch (Exception ex)
+    {
+        endpointLogger.LogError(ex, "Error fetching files from Azure Blob Storage.");
+        return Results.Ok(new BatchExecuteResponse
+        {
+            CompilationSuccess = false,
+            CompilerOutput = "File error: Could not fetch required files from storage.",
+            TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.FileError, Message = "Failed to fetch files." }).ToList()
+        });
+    }
+
+    // 3. Call Evaluation Logic Service with Content
+    try
+    {
+        endpointLogger.LogInformation("Calling batch evaluation logic for language {Language}", request.Language);
+        var result = await evaluationLogic.EvaluateBatchAsync(
+            codeContent,
+            testCasesData,
+            workingDirectory
+        );
+        endpointLogger.LogInformation("Batch evaluation logic completed. Compilation: {CompileStatus}", result.CompilationSuccess);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        endpointLogger.LogError(ex, "Unhandled exception during batch evaluation logic for CodeFile: {CodeFilePath}", request.CodeFilePath);
+        return Results.Ok(new BatchExecuteResponse
+        {
+            CompilationSuccess = false,
+            CompilerOutput = "Internal error during batch evaluation logic execution.",
+            TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.InternalError, Message = "Unexpected error in runner." }).ToList()
+        });
+    }
 })
-.WithName("ExecuteCode").WithTags("Execution").RequireAuthorization("ApiKeyPolicy");
+.WithName("ExecuteBatchCode").WithTags("Execution").RequireAuthorization("ApiKeyPolicy");
 
 app.Run();
 
@@ -184,20 +270,20 @@ async Task<string> FetchBlobContentAsync(BlobContainerClient containerClient, st
 
     try
     {
-         BlobDownloadStreamingResult downloadResult = await blobClient.DownloadStreamingAsync();
-         using (var reader = new StreamReader(downloadResult.Content, Encoding.UTF8))
-         {
-             return await reader.ReadToEndAsync();
-         }
+        BlobDownloadStreamingResult downloadResult = await blobClient.DownloadStreamingAsync();
+        using (var reader = new StreamReader(downloadResult.Content, Encoding.UTF8))
+        {
+            return await reader.ReadToEndAsync();
+        }
     }
     catch (Azure.RequestFailedException rfEx) when (rfEx.Status == 404)
     {
-         logger.LogError("Blob not found at path: {BlobPath}", blobPath);
-         throw new FileNotFoundException($"Blob not found: {blobPath}", blobPath, rfEx); // Throw specific exception
+        logger.LogError("Blob not found at path: {BlobPath}", blobPath);
+        throw new FileNotFoundException($"Blob not found: {blobPath}", blobPath, rfEx); // Throw specific exception
     }
     catch (Exception ex)
     {
-         logger.LogError(ex, "Failed to download blob: {BlobPath}", blobPath);
-         throw; // Re-throw other exceptions
+        logger.LogError(ex, "Failed to download blob: {BlobPath}", blobPath);
+        throw; // Re-throw other exceptions
     }
 }
