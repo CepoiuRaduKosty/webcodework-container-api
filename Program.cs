@@ -12,7 +12,9 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
-var logger = builder.Logging.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>(); // Get logger early for config phase
+builder.Configuration.AddJsonFile("appsettings.json",
+        optional: false,
+        reloadOnChange: true);
 
 // --- Configuration ---
 // Language is read from config/env vars later
@@ -21,7 +23,6 @@ var workingDirectory = builder.Configuration.GetValue<string>("Execution:Working
 
 if (string.IsNullOrEmpty(configuredLanguage))
 {
-    logger.LogCritical("Execution:Language configuration is missing!");
     throw new InvalidOperationException("Execution:Language configuration is required.");
 }
 
@@ -80,7 +81,6 @@ switch (configuredLanguage)
     case "c":
         // Register the concrete implementation for the interface
         builder.Services.AddScoped<ICodeEvaluationLogic, CEvaluationLogic>();
-        logger.LogInformation("Registered CExecutionLogic for ICodeExecutionLogic.");
         break;
     // case "python":
     //    builder.Services.AddScoped<ICodeExecutionLogic, PythonExecutionLogic>(); // When you create it
@@ -88,30 +88,28 @@ switch (configuredLanguage)
     //    break;
     default:
         var errorMessage = $"Unsupported language configured: '{configuredLanguage}'";
-        logger.LogCritical(errorMessage);
         throw new NotSupportedException(errorMessage); // Fail fast on unsupported config
 }
 
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
-    var rootSection = builder.Configuration.GetChildren();
-    Console.WriteLine("Loaded Configuration Sections:");
-    foreach (var section in rootSection)
+    var connectionString = configuration.GetValue<string>("AzureStorage:ConnectionString");
+    if (string.IsNullOrEmpty(connectionString))
     {
-        Console.WriteLine($"- {section.Key}");
-        foreach (var child in section.GetChildren())
-        {
-            Console.WriteLine($"  - {child.Key}: {child.Value}");
-        }
+        // Get current working directory
+        var cwd = System.Environment.CurrentDirectory;
+        // Check if appsettings.json exists in the CWD
+        var appSettingsPath = System.IO.Path.Combine(cwd, "appsettings.json");
+        var appSettingsExists = System.IO.File.Exists(appSettingsPath);
+
+        throw new InvalidOperationException(
+            $"Azure Storage Connection String not configured. " +
+            $"Debug: ConnectionString='{configuration.GetValue<string>("AzureStorage:ConnectionString")}', " +
+            $"CWD='{cwd}', " +
+            $"appsettings.json exists='{appSettingsExists}'"
+        );
     }
-    var azureStorageSection = configuration.GetSection("AzureStorage");
-    if (!azureStorageSection.Exists())
-    {
-        throw new InvalidOperationException("AzureStorage section not found in configuration.");
-    }
-    var connectionString = azureStorageSection.GetValue<string>("ConnectionString");
-    if (string.IsNullOrEmpty(connectionString)) throw new InvalidOperationException("Azure Storage Connection String not configured. Debug: " + configuration.GetValue<string>("ConnectionStrings:DefaultConnection"));
     return new BlobServiceClient(connectionString);
 });
 // -----
@@ -229,7 +227,7 @@ app.MapPost("/execute", async (
         return Results.Ok(new BatchExecuteResponse
         {
             CompilationSuccess = false,
-            CompilerOutput = "File error: Could not fetch required files from storage.",
+            CompilerOutput = "File error: Could not fetch required files from storage. Debug Reason: " + ex.Message,
             TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.FileError, Message = "Failed to fetch files." }).ToList()
         });
     }
@@ -252,7 +250,7 @@ app.MapPost("/execute", async (
         return Results.Ok(new BatchExecuteResponse
         {
             CompilationSuccess = false,
-            CompilerOutput = "Internal error during batch evaluation logic execution.",
+            CompilerOutput = "Internal error during batch evaluation logic execution. Debug: " + ex.Message,
             TestCaseResults = request.TestCases.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.InternalError, Message = "Unexpected error in runner." }).ToList()
         });
     }

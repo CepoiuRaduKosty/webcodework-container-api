@@ -26,7 +26,11 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
+COPY appsettings.json /app/publish/appsettings.json
 COPY appsettings.json /sandbox/appsettings.json
+COPY appsettings.json /source/appsettings.json
+COPY appsettings.json /appsettings.json
+COPY appsettings.json /home/appsettings.json
 COPY --from=build /app/publish .
 
 USER coder

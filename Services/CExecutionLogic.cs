@@ -164,7 +164,7 @@ namespace GenericRunnerApi.Services
         {
             var processStartInfo = new ProcessStartInfo(command, args)
             {
-                RedirectStandardInput = stdInPath != null, // Only redirect if path is provided
+                RedirectStandardInput = stdInPath != null,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -193,11 +193,13 @@ namespace GenericRunnerApi.Services
                 // Handle stdin redirection
                 if (processStartInfo.RedirectStandardInput && stdInPath != null)
                 {
+                    StreamWriter stdinWriter = process.StandardInput;
+                    stdinWriter.AutoFlush = true;
                     using (var inputFileStream = File.OpenRead(stdInPath))
                     {
-                        await inputFileStream.CopyToAsync(process.StandardInput.BaseStream);
+                        await inputFileStream.CopyToAsync(stdinWriter.BaseStream);
                     }
-                    process.StandardInput.Close(); // Must close stdin to signal EOF
+                    stdinWriter.Close();
                 }
 
                 // Wait for exit with timeout
