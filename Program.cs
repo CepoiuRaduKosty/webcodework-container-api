@@ -85,6 +85,9 @@ switch (configuredLanguage)
     case "python":
         builder.Services.AddScoped<ILanguageSpecificLogic, PythonSpecificLogicProvider>();
         break;
+    case "java":
+        builder.Services.AddScoped<ILanguageSpecificLogic, PythonSpecificLogicProvider>();
+        break;
     default:
         var errorMessage = $"Unsupported language configured: '{configuredLanguage}'";
         throw new NotSupportedException(errorMessage);
