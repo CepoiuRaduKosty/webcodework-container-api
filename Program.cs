@@ -91,6 +91,9 @@ switch (configuredLanguage)
     case "rust":
         builder.Services.AddScoped<ILanguageSpecificLogic, RustSpecificLogicProvider>();
         break;
+    case "go":
+        builder.Services.AddScoped<ILanguageSpecificLogic, GoSpecificLogicProvider>();
+        break;
     default:
         var errorMessage = $"Unsupported language configured: '{configuredLanguage}'";
         throw new NotSupportedException(errorMessage);
