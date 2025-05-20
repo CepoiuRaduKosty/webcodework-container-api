@@ -39,14 +39,15 @@ namespace WebCodeWorkExecutor.Dtos
 
     public class TestCaseResult
     {
-        public string? TestCaseId { get; set; } 
+        public string? TestCaseId { get; set; }
         [Required]
         public string Status { get; set; } = EvaluationStatus.InternalError;
         public string? Stdout { get; set; }
         public string? Stderr { get; set; }
         public long? DurationMs { get; set; }
-        public string? Message { get; set; } 
+        public string? Message { get; set; }
         public int? ExitCode { get; set; }
+        public bool MaximumMemoryException { get; set; }
     }
 
     public class BatchExecuteResponse

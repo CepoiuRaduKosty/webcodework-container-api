@@ -75,20 +75,19 @@ builder.Services.AddSwaggerGen(options =>
     }});
 });
 
-// --- NEW: Register Language-Specific Execution Logic ---
+builder.Services.AddScoped<ICodeEvaluationLogic, MainEvaluationLogic>();
+builder.Services.AddScoped<IProcessRunner, LinuxProcessRunner>();
 switch (configuredLanguage)
 {
     case "c":
-        // Register the concrete implementation for the interface
-        builder.Services.AddScoped<ICodeEvaluationLogic, CEvaluationLogic>();
+        builder.Services.AddScoped<ILanguageSpecificLogic, CSpecificLogicProvider>();
         break;
-    // case "python":
-    //    builder.Services.AddScoped<ICodeExecutionLogic, PythonExecutionLogic>(); // When you create it
-    //    logger.LogInformation("Registered PythonExecutionLogic for ICodeExecutionLogic.");
-    //    break;
+    case "python":
+        builder.Services.AddScoped<ILanguageSpecificLogic, PythonSpecificLogicProvider>();
+        break;
     default:
         var errorMessage = $"Unsupported language configured: '{configuredLanguage}'";
-        throw new NotSupportedException(errorMessage); // Fail fast on unsupported config
+        throw new NotSupportedException(errorMessage);
 }
 
 builder.Services.AddSingleton(sp =>
@@ -190,7 +189,6 @@ app.MapPost("/execute", async (
 
     try
     {
-        // 1. Fetch Main Code File Content
         endpointLogger.LogDebug("Fetching code file from: {CodeFilePath}", request.CodeFilePath);
         codeContent = await FetchBlobContentAsync(containerClient, request.CodeFilePath, endpointLogger);
         endpointLogger.LogDebug("Code file fetched successfully.");
