@@ -23,6 +23,8 @@ namespace GenericRunnerApi.Services
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = workingDir,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
 
             var stdOutBuilder = new StringBuilder();
@@ -76,7 +78,7 @@ namespace GenericRunnerApi.Services
                             while (!process.HasExited && !memoryPollCts.Token.IsCancellationRequested)
                             {
                                 process.Refresh(); // Refresh process info to get current memory usage
-                                long currentMemoryUsage = process.VirtualMemorySize64;
+                                long currentMemoryUsage = process.WorkingSet64;
                                 if (currentMemoryUsage > memoryLimitBytes)
                                 {
                                     _logger.LogWarning("Process (PID: {ProcessId}) exceeded memory limit. Usage: {UsageBytes}, Limit: {LimitBytes}. Killing.",

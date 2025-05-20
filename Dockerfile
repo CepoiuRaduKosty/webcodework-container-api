@@ -127,3 +127,53 @@ ENV ASPNETCORE_URLS=http://+:5000 \
     JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64" 
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
+
+
+# --- NEW: Final Stage for Rust Runner ---
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS rust-runner
+LABEL runner.language="rust"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    ca-certificates \
+    coreutils \
+    diffutils \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path && \
+    chmod -R 777 $CARGO_HOME && chmod -R 777 $RUSTUP_HOME # Ensure accessible
+
+ARG USER_UID=1001
+ARG USER_GID=1001
+RUN groupadd --gid $USER_GID coder && \
+    useradd --uid $USER_UID --gid $USER_GID -m coder && \
+    mkdir /sandbox && \
+    chown coder:coder /sandbox && \
+    ln -s /usr/local/cargo/bin/rustc /usr/local/bin/rustc && \
+    ln -s /usr/local/cargo/bin/cargo /usr/local/bin/cargo
+
+
+WORKDIR /app
+COPY appsettings.json /app/appsettings.json
+COPY appsettings.json /app/appsettings.json
+COPY appsettings.json /app/publish/appsettings.json
+COPY appsettings.json /sandbox/appsettings.json
+COPY appsettings.json /source/appsettings.json
+COPY appsettings.json /appsettings.json
+COPY appsettings.json /home/appsettings.json
+COPY --from=build-dotnet-api /app/publish .
+
+USER coder
+WORKDIR /sandbox
+EXPOSE 5000
+
+ENV ASPNETCORE_URLS=http://+:5000 \
+    Execution__Language="rust" \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    PATH="/home/coder/.cargo/bin:/usr/local/cargo/bin:${PATH}"
+
+ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]

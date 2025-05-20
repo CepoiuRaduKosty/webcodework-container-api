@@ -86,7 +86,10 @@ switch (configuredLanguage)
         builder.Services.AddScoped<ILanguageSpecificLogic, PythonSpecificLogicProvider>();
         break;
     case "java":
-        builder.Services.AddScoped<ILanguageSpecificLogic, PythonSpecificLogicProvider>();
+        builder.Services.AddScoped<ILanguageSpecificLogic, JavaSpecificLogicProvider>();
+        break;
+    case "rust":
+        builder.Services.AddScoped<ILanguageSpecificLogic, RustSpecificLogicProvider>();
         break;
     default:
         var errorMessage = $"Unsupported language configured: '{configuredLanguage}'";

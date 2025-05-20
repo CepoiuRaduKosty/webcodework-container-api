@@ -1,4 +1,4 @@
-// Services/JavaSpecificLogicProvider.cs
+// Services/RustSpecificLogicProvider.cs
 using System.Text;
 using System.IO; // Required for Path, File
 using System.Linq; // Required for Linq methods
@@ -10,47 +10,43 @@ using WebCodeWorkExecutor.Services; // Your Services namespace (for IProcessRunn
 
 namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if preferred
 {
-    public class JavaSpecificLogicProvider : ILanguageSpecificLogic
+    public class RustSpecificLogicProvider : ILanguageSpecificLogic
     {
-        private readonly ILogger<JavaSpecificLogicProvider> _logger;
+        private readonly ILogger<RustSpecificLogicProvider> _logger;
         private readonly IProcessRunner _processRunner;
-        private const string JAVA_COMPILER = "javac";
-        private const string JAVA_RUNTIME = "java";
-        private const string DEFAULT_MAIN_CLASS_NAME = "Solution"; // Assuming main class is Solution
-        private const string DEFAULT_SOURCE_FILE_NAME = DEFAULT_MAIN_CLASS_NAME + ".java";
+        private const string RUST_COMPILER = "rustc";
+        // For simple single-file projects, rustc defaults to executable name same as source file (without .rs)
+        // Or we can specify an output name.
+        private const string DEFAULT_SOURCE_FILE_NAME = "main.rs";
+        private const string DEFAULT_OUTPUT_EXEC_NAME = "solution_exec"; // Explicit output name
 
-        public JavaSpecificLogicProvider(ILogger<JavaSpecificLogicProvider> logger, IProcessRunner processRunner)
+        public RustSpecificLogicProvider(ILogger<RustSpecificLogicProvider> logger, IProcessRunner processRunner)
         {
             _logger = logger;
             _processRunner = processRunner;
         }
-        
-        private static string RemoveBom(string p)
-        {
-            string BOMMarkUtf8 = Encoding.UTF8.GetString(Encoding.UTF8.GetPreamble());
-            if (p.StartsWith(BOMMarkUtf8, StringComparison.Ordinal))
-                p = p.Remove(0, BOMMarkUtf8.Length);
-            return p.Replace("\0", "");
-        }
 
         public async Task<(bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? responseIfFailure)> TryCreateCodeFile(
-            string codeContentUnclean,
+            string codeContent,
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory)
         {
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
-            string codeContent = "";
-            codeContent = codeContentUnclean.Trim(new char[] { '\uFEFF', '\u200B', '\ufeff' });
-            codeContent = RemoveBom(codeContent);
-
             try
             {
-                await File.WriteAllTextAsync(localCodePathLocal, codeContent, Encoding.ASCII);
-                _logger.LogInformation("Java code file written to {LocalCodePath}", localCodePathLocal);
+                // Remove BOM if present, as it can sometimes cause issues with various toolchains, though rustc might be fine.
+                string contentToWrite = codeContent;
+                if (!string.IsNullOrEmpty(contentToWrite) && contentToWrite[0] == '\uFEFF')
+                {
+                    _logger.LogDebug("UTF-8 BOM detected in Rust code content. Removing it.");
+                    contentToWrite = contentToWrite.Substring(1);
+                }
+                await File.WriteAllTextAsync(localCodePathLocal, contentToWrite, Encoding.UTF8);
+                _logger.LogInformation("Rust code file written to {LocalCodePath}", localCodePathLocal);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write Java solution code to local file {LocalCodePath}", localCodePathLocal);
+                _logger.LogError(ex, "Failed to write Rust solution code to local file {LocalCodePath}", localCodePathLocal);
                 var batchResponse = new BatchExecuteResponse
                 {
                     CompilationSuccess = false,
@@ -70,42 +66,45 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) // Path to the Solution.java
+            string? localCodePath) // Path to the main.rs
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
-                _logger.LogError("Java code file path is null, empty, or file does not exist for compilation: {LocalCodePath}", localCodePath);
+                _logger.LogError("Rust code file path is null, empty, or file does not exist for compilation: {LocalCodePath}", localCodePath);
                 var errorResponse = new BatchExecuteResponse { CompilationSuccess = false, CompilerOutput = "Internal Error: Code file not found for compilation." };
                 errorResponse.TestCaseResults = testCasesData.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.CompileError, Message = "Code file missing." }).ToList();
                 return (false, errorResponse, null, null, errorResponse.CompilerOutput ?? string.Empty);
             }
 
-            // For Java, `javac Solution.java`. It produces Solution.class in the same directory.
-            string compileArgs = $"-encoding UTF-8 -d . \"{localCodePath}\""; // javac will create .class files in the workingDirectory
-            _logger.LogInformation("Compiling Java code: {JavaCompiler} {Arguments}", JAVA_COMPILER, compileArgs);
+            string localExecPath = Path.Combine(workingDirectory, DEFAULT_OUTPUT_EXEC_NAME);
+            if (File.Exists(localExecPath)) File.Delete(localExecPath); // Clean previous executable
 
-            // Short timeout for compilation, memory for javac itself
-            var (exitCode, stdOut, stdErr, debug1, debug2, debug3) = await _processRunner.RunProcessAsync(
-                JAVA_COMPILER,
+            // rustc main.rs -o solution_exec
+            string compileArgs = $"\"{localCodePath}\" -o \"{localExecPath}\"";
+            _logger.LogInformation("Compiling Rust code: {RustCompiler} {Arguments}", RUST_COMPILER, compileArgs);
+
+            // Adjust timeout/memory for rustc if needed (usually more than C, less than Java)
+            var (exitCode, stdOut, stdErr, _, _, _) = await _processRunner.RunProcessAsync(
+                RUST_COMPILER,
                 compileArgs,
                 workingDirectory,
-                null, // No stdin for javac
-                30,   // Compilation timeout (seconds) - Java can be slower
-                2048   // Memory for javac (MB)
+                null, // No stdin for rustc
+                30,   // Compilation timeout (seconds) - Rust can be slower to compile
+                256   // Memory for rustc (MB)
             );
 
             string compileOutput = $"Stdout:\n{stdOut}\nStderr:\n{stdErr}".Trim();
 
-            if (exitCode == 0)
+            if (exitCode == 0 && File.Exists(localExecPath)) // Check if executable was actually created
             {
-                _logger.LogInformation("Java compilation successful for {LocalCodePath}. Output .class files should be in {WorkingDirectory}", localCodePath, workingDirectory);
-                // The "outputIdentifier" is the main class name.
-                // The "executionBasePath" is the directory containing the .class files (the classpath).
-                return (true, null, DEFAULT_MAIN_CLASS_NAME, workingDirectory, compileOutput);
+                _logger.LogInformation("Rust compilation successful for {LocalCodePath}. Executable at {LocalExecPath}", localCodePath, localExecPath);
+                // outputIdentifier is the name of the executable relative to executionBasePath
+                // executionBasePath is the directory where the executable is.
+                return (true, null, DEFAULT_OUTPUT_EXEC_NAME, workingDirectory, compileOutput);
             }
             else
             {
-                _logger.LogWarning("Java compilation failed for {LocalCodePath}. Exit Code: {ExitCode}. Output:\n{CompilerOutput}", localCodePath, exitCode, compileOutput);
+                _logger.LogWarning("Rust compilation failed for {LocalCodePath}. Exit Code: {ExitCode}. Output:\n{CompilerOutput}", localCodePath, exitCode, compileOutput);
                 var batchResponse = new BatchExecuteResponse
                 {
                     CompilationSuccess = false,
@@ -114,7 +113,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
                     {
                         TestCaseId = tc.TestCaseId,
                         Status = EvaluationStatus.CompileError,
-                        Message = "Compilation error detected."
+                        Message = exitCode != 0 ? "Compilation error detected." : "Compilation failed: Executable not produced."
                     }).ToList()
                 };
                 return (false, batchResponse, null, null, compileOutput);
@@ -122,21 +121,31 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         }
 
         public async Task<TestCaseResult> TryRunningTestcase(
-            string workingDirectory,      // This is the base path where .class files are (e.g., /sandbox)
-            string? mainClassName,         // This is the "outputIdentifier" from TryCompiling (e.g., "Solution")
+            string workingDirectory,      // Base path, e.g., /sandbox
+            string? executableName,        // "outputIdentifier" from TryCompiling (e.g., "solution_exec")
             TestCaseEvaluationData tcData)
         {
 
-            mainClassName = "Solution";
+            executableName = DEFAULT_OUTPUT_EXEC_NAME;
             string currentInputFileName = "current_input.txt";
             var currentLocalInputPath = Path.Combine(workingDirectory, currentInputFileName);
             var tcResult = new TestCaseResult { TestCaseId = tcData.TestCaseId };
 
-            if (string.IsNullOrEmpty(mainClassName))
+            if (string.IsNullOrEmpty(executableName))
             {
-                _logger.LogError("Main class name not provided for Java execution for test case ID {TestCaseId}", tcData.TestCaseId);
+                _logger.LogError("Executable name not provided for Rust execution for test case ID {TestCaseId}", tcData.TestCaseId);
                 tcResult.Status = EvaluationStatus.InternalError;
-                tcResult.Message = "Internal error: Main class name missing for execution.";
+                tcResult.Message = "Internal error: Executable name missing for execution.";
+                return tcResult;
+            }
+
+            string localExecutablePath = Path.Combine(workingDirectory, executableName);
+
+            if (!File.Exists(localExecutablePath))
+            {
+                _logger.LogError("Rust executable file not found for execution: {LocalExecutablePath}", localExecutablePath);
+                tcResult.Status = EvaluationStatus.InternalError;
+                tcResult.Message = "Executable file not found (post-compilation check).";
                 return tcResult;
             }
 
@@ -144,39 +153,33 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             {
                 await File.WriteAllTextAsync(currentLocalInputPath, tcData.InputContent, Encoding.UTF8);
 
-                string javaRuntimeCommand = JAVA_RUNTIME;
-                string javaArgs = $"-cp \"{workingDirectory}\" {mainClassName}";
-
                 string timeoutCommand = "timeout";
                 int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1;
-                string timeoutArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s {javaRuntimeCommand} {javaArgs}";
+                // The command to run is the executable itself
+                string commandToRunWithTimeout = $"\"{localExecutablePath}\"";
+                string timeoutArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s {commandToRunWithTimeout}";
 
-                _logger.LogInformation("Executing Java for test case ID {TestCaseId}: {TimeoutCommand} {TimeoutArgs}", tcData.TestCaseId ?? "N/A", timeoutCommand, timeoutArgs);
+                _logger.LogInformation("Executing Rust program for test case ID {TestCaseId}: {TimeoutCommand} {TimeoutArgs}", tcData.TestCaseId ?? "N/A", timeoutCommand, timeoutArgs);
 
-                var (runExitCode, runStdOut, runStdErr, durationMs, timedOut, memoryLimitExceededByProcessPolling) = await _processRunner.RunProcessAsync(
+                var (runExitCode, runStdOut, runStdErr, durationMs, timedOut, memoryLimitExceeded) = await _processRunner.RunProcessAsync(
                     timeoutCommand,
                     timeoutArgs,
                     workingDirectory,
                     currentLocalInputPath,
-                    timeLimitForTimeoutCmd + 5, // Overall timeout for the 'timeout' process wrapper (a bit more generous)
-                    tcData.MaxRamMB + 64 // Give JVM a bit more container memory than its -Xmx for overhead
-                                         // Note: The process poller memory limit (`tcData.MaxRamMB`) might not be as effective
-                                         // for JVM as the `-Xmx` flag is. The container limit is the ultimate cap.
+                    timeLimitForTimeoutCmd + 2,
+                    tcData.MaxRamMB
                 );
 
                 tcResult.Stdout = runStdOut.TrimEnd('\r', '\n');
                 tcResult.Stderr = runStdErr.TrimEnd('\r', '\n');
                 tcResult.DurationMs = durationMs;
                 tcResult.ExitCode = runExitCode;
-                // tcResult.MaximumMemoryException = memoryLimitExceededByProcessPolling; // If this prop exists
 
-                // JVM might exit with non-zero for OOM before our poller catches it or timeout command reacts.
-                // SIGKILL from timeout results in exit code 137.
-                if (memoryLimitExceededByProcessPolling || (runStdErr.Contains("java.lang.OutOfMemoryError")))
+                if (memoryLimitExceeded)
                 {
                     tcResult.Status = EvaluationStatus.MemoryLimitExceeded;
                 }
-                else if (timedOut || runExitCode == 137 || runExitCode == 124)
+                else if (timedOut || runExitCode == 137 || runExitCode == 124) // SIGKILL often 137
                 {
                     tcResult.Status = EvaluationStatus.TimeLimitExceeded;
                 }
@@ -198,9 +201,9 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error running Java test case (ID: {TestCaseId})", tcData.TestCaseId ?? "N/A");
+                _logger.LogError(ex, "Error running Rust test case (ID: {TestCaseId})", tcData.TestCaseId ?? "N/A");
                 tcResult.Status = EvaluationStatus.InternalError;
-                tcResult.Message = $"Error during Java test case execution: {ex.Message}";
+                tcResult.Message = $"Error during Rust test case execution: {ex.Message}";
             }
             finally
             {
@@ -209,7 +212,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             return tcResult;
         }
 
-        // --- Helper Methods (identical to CSpecificLogicProvider) ---
+        // --- Helper Methods (identical to C/Java SpecificLogicProvider) ---
         private void SafelyDeleteFile(string? path)
         {
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
