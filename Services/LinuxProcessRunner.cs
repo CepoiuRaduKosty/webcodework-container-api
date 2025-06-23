@@ -30,7 +30,7 @@ namespace GenericRunnerApi.Services
             var stdOutBuilder = new StringBuilder();
             var stdErrBuilder = new StringBuilder();
             var stopwatch = Stopwatch.StartNew();
-            int exitCode = -999; // Default indicating failure to get code
+            int exitCode = -999; 
             bool processTimedOut = false;
             bool memoryLimitExceeded = false;
 
@@ -62,7 +62,7 @@ namespace GenericRunnerApi.Services
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
                 string debugmem = "";
-                if (maxMemoryMB > 0) // Only poll if a valid limit is set
+                if (maxMemoryMB > 0) 
                 {
                     memoryPollCts = new CancellationTokenSource();
                     long memoryLimitBytes = (long)maxMemoryMB * 1024 * 1024;
@@ -72,27 +72,27 @@ namespace GenericRunnerApi.Services
                     {
                         try
                         {
-                            // Give the process a moment to start and allocate initial memory
+                            
                             await Task.Delay(100, memoryPollCts.Token);
 
                             while (!process.HasExited && !memoryPollCts.Token.IsCancellationRequested)
                             {
-                                process.Refresh(); // Refresh process info to get current memory usage
+                                process.Refresh(); 
                                 long currentMemoryUsage = process.WorkingSet64;
                                 if (currentMemoryUsage > memoryLimitBytes)
                                 {
                                     _logger.LogWarning("Process (PID: {ProcessId}) exceeded memory limit. Usage: {UsageBytes}, Limit: {LimitBytes}. Killing.",
                                         process.Id, currentMemoryUsage, memoryLimitBytes);
-                                    memoryLimitExceeded = true; // Set the flag
+                                    memoryLimitExceeded = true; 
                                     try
                                     {
                                         if (!process.HasExited) process.Kill(entireProcessTree: true);
                                     }
                                     catch (InvalidOperationException) { /* Process already exited */ }
                                     catch (Exception killEx) { _logger.LogError(killEx, "Failed to kill memory-exceeding process (PID: {ProcessId}).", process.Id); }
-                                    break; // Exit polling loop
+                                    break; 
                                 }
-                                await Task.Delay(250, memoryPollCts.Token); // Poll interval (e.g., every 250ms)
+                                await Task.Delay(250, memoryPollCts.Token); 
                             }
                         }
                         catch (OperationCanceledException) { _logger.LogDebug("Memory polling cancelled for PID {ProcessId}.", process.Id); }
@@ -105,19 +105,19 @@ namespace GenericRunnerApi.Services
                     }, memoryPollCts.Token);
                 }
 
-                // Wait for exit with timeout
+                
                 bool exited = false;
                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
                 {
                     try
                     {
-                        // Wait for the process to exit OR for the token to be cancelled
+                        
                         await process.WaitForExitAsync(cts.Token);
-                        exited = !memoryLimitExceeded; // Process finished before timeout
+                        exited = !memoryLimitExceeded; 
                     }
-                    catch (OperationCanceledException) // Catches cancellation from cts.Token
+                    catch (OperationCanceledException) 
                     {
-                        if (!memoryLimitExceeded) // Only set timeout if MLE didn't already occur
+                        if (!memoryLimitExceeded) 
                         {
                             processTimedOut = true;
                             _logger.LogWarning("Process (PID: {ProcessId}) exceeded time limit of {Timeout}s. Killing.", process.Id, timeoutSeconds);
@@ -128,7 +128,7 @@ namespace GenericRunnerApi.Services
                             catch (InvalidOperationException) { /* Process already exited */ }
                             catch (Exception killEx) { _logger.LogError(killEx, "Failed to kill timed-out process (PID: {ProcessId}).", process.Id); }
                         }
-                        exitCode = -1; // Indicate killed by timeout
+                        exitCode = -1; 
                     }
                 }
 
@@ -136,10 +136,10 @@ namespace GenericRunnerApi.Services
 
                 if (memoryPollCts != null)
                 {
-                    memoryPollCts.Cancel(); // Signal cancellation
+                    memoryPollCts.Cancel(); 
                     if (memoryPollingTask != null)
                     {
-                        try { await memoryPollingTask; } // Await its completion
+                        try { await memoryPollingTask; } 
                         catch (OperationCanceledException) { /* Expected */ }
                         catch (Exception ex) { _logger.LogError(ex, "Error during memory polling task cleanup for PID {ProcessId}.", process.Id); }
                     }
@@ -148,8 +148,8 @@ namespace GenericRunnerApi.Services
 
                 if (memoryLimitExceeded)
                 {
-                    exitCode = -2; // Specific code for MLE
-                    processTimedOut = false; // MLE takes precedence
+                    exitCode = -2; 
+                    processTimedOut = false; 
                     exited = false;
                 }
                 else if (!exited)
@@ -157,16 +157,16 @@ namespace GenericRunnerApi.Services
                     _logger.LogWarning("Process '{Command} {Args}' exceeded timeout of {Timeout}s. Killing.", command, args, timeoutSeconds);
                     processTimedOut = true;
                     try { process.Kill(entireProcessTree: true); } catch (Exception killEx) { _logger.LogError(killEx, "Failed to kill timed out process."); }
-                    exitCode = -1; // Indicate killed by timeout
+                    exitCode = -1; 
                 }
                 else
                 {
                     exitCode = process.ExitCode;
-                    // Special check if using 'timeout' command wrapper
+                    
                     if (command == "timeout" && (exitCode == 124 || exitCode == 137))
                     {
                         processTimedOut = true;
-                        exitCode = -1; // Standardize timeout indication
+                        exitCode = -1; 
                     }
                 }
             }

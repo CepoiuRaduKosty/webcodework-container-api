@@ -1,14 +1,14 @@
-// Services/JavaSpecificLogicProvider.cs
-using System.Text;
-using System.IO; // Required for Path, File
-using System.Linq; // Required for Linq methods
-using System.Threading.Tasks; // Required for Task
-using System.Collections.Generic; // Required for List
-using Microsoft.Extensions.Logging; // Required for ILogger
-using WebCodeWorkExecutor.Dtos; // Your DTOs namespace (ensure EvaluationStatus is here)
-using WebCodeWorkExecutor.Services; // Your Services namespace (for IProcessRunner, ILanguageSpecificLogic)
 
-namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if preferred
+using System.Text;
+using System.IO; 
+using System.Linq; 
+using System.Threading.Tasks; 
+using System.Collections.Generic; 
+using Microsoft.Extensions.Logging; 
+using WebCodeWorkExecutor.Dtos; 
+using WebCodeWorkExecutor.Services; 
+
+namespace GenericRunnerApi.Services 
 {
     public class JavaSpecificLogicProvider : ILanguageSpecificLogic
     {
@@ -16,7 +16,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         private readonly IProcessRunner _processRunner;
         private const string JAVA_COMPILER = "javac";
         private const string JAVA_RUNTIME = "java";
-        private const string DEFAULT_MAIN_CLASS_NAME = "Solution"; // Assuming main class is Solution
+        private const string DEFAULT_MAIN_CLASS_NAME = "Solution"; 
         private const string DEFAULT_SOURCE_FILE_NAME = DEFAULT_MAIN_CLASS_NAME + ".java";
 
         public JavaSpecificLogicProvider(ILogger<JavaSpecificLogicProvider> logger, IProcessRunner processRunner)
@@ -70,7 +70,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) // Path to the Solution.java
+            string? localCodePath) 
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
@@ -80,18 +80,18 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
                 return (false, errorResponse, null, null, errorResponse.CompilerOutput ?? string.Empty);
             }
 
-            // For Java, `javac Solution.java`. It produces Solution.class in the same directory.
-            string compileArgs = $"-encoding UTF-8 -d . \"{localCodePath}\""; // javac will create .class files in the workingDirectory
+            
+            string compileArgs = $"-encoding UTF-8 -d . \"{localCodePath}\""; 
             _logger.LogInformation("Compiling Java code: {JavaCompiler} {Arguments}", JAVA_COMPILER, compileArgs);
 
-            // Short timeout for compilation, memory for javac itself
+            
             var (exitCode, stdOut, stdErr, debug1, debug2, debug3) = await _processRunner.RunProcessAsync(
                 JAVA_COMPILER,
                 compileArgs,
                 workingDirectory,
-                null, // No stdin for javac
-                30,   // Compilation timeout (seconds) - Java can be slower
-                2048   // Memory for javac (MB)
+                null, 
+                30,   
+                2048   
             );
 
             string compileOutput = $"Stdout:\n{stdOut}\nStderr:\n{stdErr}".Trim();
@@ -99,8 +99,8 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             if (exitCode == 0)
             {
                 _logger.LogInformation("Java compilation successful for {LocalCodePath}. Output .class files should be in {WorkingDirectory}", localCodePath, workingDirectory);
-                // The "outputIdentifier" is the main class name.
-                // The "executionBasePath" is the directory containing the .class files (the classpath).
+                
+                
                 return (true, null, DEFAULT_MAIN_CLASS_NAME, workingDirectory, compileOutput);
             }
             else
@@ -122,8 +122,8 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         }
 
         public async Task<TestCaseResult> TryRunningTestcase(
-            string workingDirectory,      // This is the base path where .class files are (e.g., /sandbox)
-            string? mainClassName,         // This is the "outputIdentifier" from TryCompiling (e.g., "Solution")
+            string workingDirectory,      
+            string? mainClassName,         
             TestCaseEvaluationData tcData)
         {
 
@@ -158,20 +158,20 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
                     timeoutArgs,
                     workingDirectory,
                     currentLocalInputPath,
-                    timeLimitForTimeoutCmd + 5, // Overall timeout for the 'timeout' process wrapper (a bit more generous)
-                    tcData.MaxRamMB + 64 // Give JVM a bit more container memory than its -Xmx for overhead
-                                         // Note: The process poller memory limit (`tcData.MaxRamMB`) might not be as effective
-                                         // for JVM as the `-Xmx` flag is. The container limit is the ultimate cap.
+                    timeLimitForTimeoutCmd + 5, 
+                    tcData.MaxRamMB + 64 
+                                         
+                                         
                 );
 
                 tcResult.Stdout = runStdOut.TrimEnd('\r', '\n');
                 tcResult.Stderr = runStdErr.TrimEnd('\r', '\n');
                 tcResult.DurationMs = durationMs;
                 tcResult.ExitCode = runExitCode;
-                // tcResult.MaximumMemoryException = memoryLimitExceededByProcessPolling; // If this prop exists
+                
 
-                // JVM might exit with non-zero for OOM before our poller catches it or timeout command reacts.
-                // SIGKILL from timeout results in exit code 137.
+                
+                
                 if (memoryLimitExceededByProcessPolling || (runStdErr.Contains("java.lang.OutOfMemoryError")))
                 {
                     tcResult.Status = EvaluationStatus.MemoryLimitExceeded;
@@ -209,7 +209,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             return tcResult;
         }
 
-        // --- Helper Methods (identical to CSpecificLogicProvider) ---
+        
         private void SafelyDeleteFile(string? path)
         {
             if (!string.IsNullOrEmpty(path) && File.Exists(path))

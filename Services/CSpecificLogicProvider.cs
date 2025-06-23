@@ -30,7 +30,7 @@ namespace GenericRunnerApi.Services
             if (!batchResponse.CompilationSuccess)
             {
                 _logger.LogWarning("Compilation failed. Exit Code: {ExitCode}. Output:\n{CompilerOutput}", compileExitCode, batchResponse.CompilerOutput);
-                // Populate all test case results with CompileError
+                
                 batchResponse.TestCaseResults = testCasesData.Select(tc => new TestCaseResult
                 {
                     TestCaseId = tc.TestCaseId,
@@ -75,17 +75,17 @@ namespace GenericRunnerApi.Services
 
             try
             {
-                // Write current test case input and expected output to local files
+                
 
                 await File.WriteAllTextAsync(currentLocalInputPath, tcData.InputContent, Encoding.UTF8);
                 await File.WriteAllTextAsync(currentLocalExpectedOutputPath, tcData.ExpectedOutputContent, Encoding.UTF8);
 
                 string runCommand = "timeout";
-                int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1; // Ensure at least 1s for timeout command
+                int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1; 
 
                 string runArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s \"{localExePath}\"";
                 var (runExitCode, runStdOut, runStdErr, durationMs, timedOut, memoryLimitExceeded) = await _processRunner.RunProcessAsync(
-                    runCommand, runArgs, workingDirectory, currentLocalInputPath, timeLimitForTimeoutCmd + 2, tcData.MaxRamMB); // Orchestrator timeout
+                    runCommand, runArgs, workingDirectory, currentLocalInputPath, timeLimitForTimeoutCmd + 2, tcData.MaxRamMB); 
 
                 tcResult.Stdout = runStdOut.TrimEnd('\r', '\n');
                 tcResult.Stderr = runStdErr.TrimEnd('\r', '\n');
@@ -107,7 +107,7 @@ namespace GenericRunnerApi.Services
                 }
                 else
                 {
-                    // Compare output
+                    
                     if (CompareOutputs(runStdOut, tcData.ExpectedOutputContent))
                     {
                         tcResult.Status = EvaluationStatus.Accepted;

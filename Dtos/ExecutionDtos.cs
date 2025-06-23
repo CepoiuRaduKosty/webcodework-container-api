@@ -1,4 +1,4 @@
-// Dtos/EvaluationDtos.cs
+
 using System.ComponentModel.DataAnnotations;
 
 namespace WebCodeWorkExecutor.Dtos
@@ -12,11 +12,11 @@ namespace WebCodeWorkExecutor.Dtos
         public string ExpectedOutputFilePath { get; set; } = string.Empty;
 
         [Required]
-        [Range(100, 10000)] // Example: 100ms to 10s
+        [Range(100, 10000)] 
         public int TimeLimitMs { get; set; } = 2000;
 
         [Required]
-        [Range(32, 512)]  // Example: 32MB to 512MB
+        [Range(32, 512)]  
         public int MaxRamMB { get; set; } = 128;
 
         public string? TestCaseId { get; set; } 

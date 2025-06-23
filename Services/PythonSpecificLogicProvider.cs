@@ -1,4 +1,4 @@
-// Services/PythonSpecificLogicProvider.cs
+
 using System.Text;
 using WebCodeWorkExecutor.Dtos; 
 using WebCodeWorkExecutor.Services; 
@@ -19,10 +19,10 @@ namespace GenericRunnerApi.Services
 
         public async Task<(bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? responseIfFailure)> TryCreateCodeFile(
             string codeContent,
-            List<TestCaseEvaluationData> testCasesData, // Used for constructing error response
+            List<TestCaseEvaluationData> testCasesData, 
             string workingDirectory)
         {
-            string codeFileNameLocal = "solution.py"; // Python specific extension
+            string codeFileNameLocal = "solution.py"; 
             string localCodePathLocal = Path.Combine(workingDirectory, codeFileNameLocal);
             try
             {
@@ -92,7 +92,7 @@ namespace GenericRunnerApi.Services
                     TestCaseResults = testCasesData.Select(tc => new TestCaseResult
                     {
                         TestCaseId = tc.TestCaseId,
-                        Status = EvaluationStatus.CompileError, // Use CompileError for syntax issues
+                        Status = EvaluationStatus.CompileError, 
                         Message = "Syntax error detected."
                     }).ToList()
                 };
@@ -102,7 +102,7 @@ namespace GenericRunnerApi.Services
 
         public async Task<TestCaseResult> TryRunningTestcase(
             string workingDirectory,
-            string? localScriptPath, // This will be the path to solution.py
+            string? localScriptPath, 
             TestCaseEvaluationData tcData)
         {
             string currentInputFileName = "current_input.txt";
@@ -159,7 +159,7 @@ namespace GenericRunnerApi.Services
                 }
                 else
                 {
-                    // Compare output
+                    
                     if (CompareOutputs(runStdOut, tcData.ExpectedOutputContent))
                     {
                         tcResult.Status = EvaluationStatus.Accepted;

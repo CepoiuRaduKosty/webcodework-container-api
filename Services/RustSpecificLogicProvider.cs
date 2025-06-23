@@ -1,24 +1,24 @@
-// Services/RustSpecificLogicProvider.cs
-using System.Text;
-using System.IO; // Required for Path, File
-using System.Linq; // Required for Linq methods
-using System.Threading.Tasks; // Required for Task
-using System.Collections.Generic; // Required for List
-using Microsoft.Extensions.Logging; // Required for ILogger
-using WebCodeWorkExecutor.Dtos; // Your DTOs namespace (ensure EvaluationStatus is here)
-using WebCodeWorkExecutor.Services; // Your Services namespace (for IProcessRunner, ILanguageSpecificLogic)
 
-namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if preferred
+using System.Text;
+using System.IO; 
+using System.Linq; 
+using System.Threading.Tasks; 
+using System.Collections.Generic; 
+using Microsoft.Extensions.Logging; 
+using WebCodeWorkExecutor.Dtos; 
+using WebCodeWorkExecutor.Services; 
+
+namespace GenericRunnerApi.Services 
 {
     public class RustSpecificLogicProvider : ILanguageSpecificLogic
     {
         private readonly ILogger<RustSpecificLogicProvider> _logger;
         private readonly IProcessRunner _processRunner;
         private const string RUST_COMPILER = "rustc";
-        // For simple single-file projects, rustc defaults to executable name same as source file (without .rs)
-        // Or we can specify an output name.
+        
+        
         private const string DEFAULT_SOURCE_FILE_NAME = "main.rs";
-        private const string DEFAULT_OUTPUT_EXEC_NAME = "solution_exec"; // Explicit output name
+        private const string DEFAULT_OUTPUT_EXEC_NAME = "solution_exec"; 
 
         public RustSpecificLogicProvider(ILogger<RustSpecificLogicProvider> logger, IProcessRunner processRunner)
         {
@@ -34,7 +34,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
             try
             {
-                // Remove BOM if present, as it can sometimes cause issues with various toolchains, though rustc might be fine.
+                
                 string contentToWrite = codeContent;
                 if (!string.IsNullOrEmpty(contentToWrite) && contentToWrite[0] == '\uFEFF')
                 {
@@ -66,7 +66,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) // Path to the main.rs
+            string? localCodePath) 
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
@@ -77,29 +77,29 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             }
 
             string localExecPath = Path.Combine(workingDirectory, DEFAULT_OUTPUT_EXEC_NAME);
-            if (File.Exists(localExecPath)) File.Delete(localExecPath); // Clean previous executable
+            if (File.Exists(localExecPath)) File.Delete(localExecPath); 
 
-            // rustc main.rs -o solution_exec
+            
             string compileArgs = $"\"{localCodePath}\" -o \"{localExecPath}\"";
             _logger.LogInformation("Compiling Rust code: {RustCompiler} {Arguments}", RUST_COMPILER, compileArgs);
 
-            // Adjust timeout/memory for rustc if needed (usually more than C, less than Java)
+            
             var (exitCode, stdOut, stdErr, _, _, _) = await _processRunner.RunProcessAsync(
                 RUST_COMPILER,
                 compileArgs,
                 workingDirectory,
-                null, // No stdin for rustc
-                30,   // Compilation timeout (seconds) - Rust can be slower to compile
-                256   // Memory for rustc (MB)
+                null, 
+                30,   
+                256   
             );
 
             string compileOutput = $"Stdout:\n{stdOut}\nStderr:\n{stdErr}".Trim();
 
-            if (exitCode == 0 && File.Exists(localExecPath)) // Check if executable was actually created
+            if (exitCode == 0 && File.Exists(localExecPath)) 
             {
                 _logger.LogInformation("Rust compilation successful for {LocalCodePath}. Executable at {LocalExecPath}", localCodePath, localExecPath);
-                // outputIdentifier is the name of the executable relative to executionBasePath
-                // executionBasePath is the directory where the executable is.
+                
+                
                 return (true, null, DEFAULT_OUTPUT_EXEC_NAME, workingDirectory, compileOutput);
             }
             else
@@ -121,8 +121,8 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         }
 
         public async Task<TestCaseResult> TryRunningTestcase(
-            string workingDirectory,      // Base path, e.g., /sandbox
-            string? executableName,        // "outputIdentifier" from TryCompiling (e.g., "solution_exec")
+            string workingDirectory,      
+            string? executableName,        
             TestCaseEvaluationData tcData)
         {
 
@@ -155,7 +155,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
 
                 string timeoutCommand = "timeout";
                 int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1;
-                // The command to run is the executable itself
+                
                 string commandToRunWithTimeout = $"\"{localExecutablePath}\"";
                 string timeoutArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s {commandToRunWithTimeout}";
 
@@ -179,7 +179,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
                 {
                     tcResult.Status = EvaluationStatus.MemoryLimitExceeded;
                 }
-                else if (timedOut || runExitCode == 137 || runExitCode == 124) // SIGKILL often 137
+                else if (timedOut || runExitCode == 137 || runExitCode == 124) 
                 {
                     tcResult.Status = EvaluationStatus.TimeLimitExceeded;
                 }
@@ -212,7 +212,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             return tcResult;
         }
 
-        // --- Helper Methods (identical to C/Java SpecificLogicProvider) ---
+        
         private void SafelyDeleteFile(string? path)
         {
             if (!string.IsNullOrEmpty(path) && File.Exists(path))

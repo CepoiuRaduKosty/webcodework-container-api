@@ -1,4 +1,4 @@
-// Authentication/ApiKeyAuthenticationDefaults.cs
+
 namespace WebCodeWorkExecutor.Authentication
 {
     public static class ApiKeyAuthenticationDefaults

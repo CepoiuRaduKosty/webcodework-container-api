@@ -1,5 +1,5 @@
-// Services/ICodeExecutionLogic.cs
-using WebCodeWorkExecutor.Dtos; // Assuming DTOs are in this namespace
+
+using WebCodeWorkExecutor.Dtos; 
 
 namespace WebCodeWorkExecutor.Services
 {
@@ -8,7 +8,7 @@ namespace WebCodeWorkExecutor.Services
         string ExpectedOutputContent,
         int TimeLimitMs,
         int MaxRamMB,
-        string? TestCaseId // For correlation
+        string? TestCaseId 
     );
 
     public interface ICodeEvaluationLogic

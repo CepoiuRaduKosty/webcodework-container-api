@@ -1,22 +1,22 @@
-// Services/GoSpecificLogicProvider.cs
-using System.Text;
-using System.IO; // Required for Path, File
-using System.Linq; // Required for Linq methods
-using System.Threading.Tasks; // Required for Task
-using System.Collections.Generic; // Required for List
-using Microsoft.Extensions.Logging; // Required for ILogger
-using WebCodeWorkExecutor.Dtos; // Your DTOs namespace (ensure EvaluationStatus is here)
-using WebCodeWorkExecutor.Services; // Your Services namespace (for IProcessRunner, ILanguageSpecificLogic)
 
-namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if preferred
+using System.Text;
+using System.IO; 
+using System.Linq; 
+using System.Threading.Tasks; 
+using System.Collections.Generic; 
+using Microsoft.Extensions.Logging; 
+using WebCodeWorkExecutor.Dtos; 
+using WebCodeWorkExecutor.Services; 
+
+namespace GenericRunnerApi.Services 
 {
     public class GoSpecificLogicProvider : ILanguageSpecificLogic
     {
         private readonly ILogger<GoSpecificLogicProvider> _logger;
         private readonly IProcessRunner _processRunner;
-        private const string GO_COMMAND = "go"; // Command for both build and run (go run) or just build (go build)
+        private const string GO_COMMAND = "go"; 
         private const string DEFAULT_SOURCE_FILE_NAME = "main.go";
-        private const string DEFAULT_OUTPUT_EXEC_NAME = "solution_exec"; // Explicit output name for compiled binary
+        private const string DEFAULT_OUTPUT_EXEC_NAME = "solution_exec"; 
 
         public GoSpecificLogicProvider(ILogger<GoSpecificLogicProvider> logger, IProcessRunner processRunner)
         {
@@ -32,7 +32,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
             try
             {
-                // Remove BOM if present
+                
                 string contentToWrite = codeContent;
                 if (!string.IsNullOrEmpty(contentToWrite) && contentToWrite[0] == '\uFEFF')
                 {
@@ -54,7 +54,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) // Path to the main.go
+            string? localCodePath) 
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
@@ -66,19 +66,19 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             string localExecPath = Path.Combine(workingDirectory, DEFAULT_OUTPUT_EXEC_NAME);
             if (File.Exists(localExecPath)) File.Delete(localExecPath);
 
-            // go build -o solution_exec main.go
-            // The source file must be specified last for `go build` when using `-o`.
+            
+            
             string compileArgs = $"build -o \"{localExecPath}\" \"{localCodePath}\"";
             _logger.LogInformation("Compiling Go code: {GoCommand} {Arguments}", GO_COMMAND, compileArgs);
 
-            // Adjust timeout/memory for `go build`
+            
             var (exitCode, stdOut, stdErr, _, _, _) = await _processRunner.RunProcessAsync(
-                GO_COMMAND, // "go"
+                GO_COMMAND, 
                 compileArgs,
                 workingDirectory,
-                null, // No stdin for `go build`
-                30,   // Compilation timeout (seconds)
-                256   // Memory for `go build` (MB)
+                null, 
+                30,   
+                256   
             );
 
             string compileOutput = $"Stdout:\n{stdOut}\nStderr:\n{stdErr}".Trim();
@@ -107,8 +107,8 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
         }
 
         public async Task<TestCaseResult> TryRunningTestcase(
-            string workingDirectory,      // Base path, e.g., /sandbox
-            string? executableName,        // "outputIdentifier" from TryCompiling (e.g., "solution_exec")
+            string workingDirectory,      
+            string? executableName,        
             TestCaseEvaluationData tcData)
         {
             executableName = DEFAULT_OUTPUT_EXEC_NAME;
@@ -140,8 +140,8 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
 
                 string timeoutCommand = "timeout";
                 int timeLimitForTimeoutCmd = (tcData.TimeLimitMs / 1000) > 0 ? (tcData.TimeLimitMs / 1000) : 1;
-                // The command to run is the executable itself
-                string commandToRunWithTimeout = $"\"{localExecutablePath}\""; // Path to the compiled Go binary
+                
+                string commandToRunWithTimeout = $"\"{localExecutablePath}\""; 
                 string timeoutArgs = $"--signal=SIGKILL {timeLimitForTimeoutCmd}s {commandToRunWithTimeout}";
 
                 _logger.LogInformation("Executing Go program for test case ID {TestCaseId}: {TimeoutCommand} {TimeoutArgs}", tcData.TestCaseId ?? "N/A", timeoutCommand, timeoutArgs);
@@ -197,7 +197,7 @@ namespace GenericRunnerApi.Services // Or WebCodeWorkExecutor.Services if prefer
             return tcResult;
         }
 
-        // --- Helper Methods (identical to other SpecificLogicProviders) ---
+        
         private void SafelyDeleteFile(string? path)
         {
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
