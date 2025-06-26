@@ -61,7 +61,7 @@ namespace GenericRunnerApi.Services
 
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
-                string debugmem = "";
+
                 if (maxMemoryMB > 0) 
                 {
                     memoryPollCts = new CancellationTokenSource();
@@ -72,7 +72,6 @@ namespace GenericRunnerApi.Services
                     {
                         try
                         {
-                            
                             await Task.Delay(100, memoryPollCts.Token);
 
                             while (!process.HasExited && !memoryPollCts.Token.IsCancellationRequested)
@@ -105,13 +104,11 @@ namespace GenericRunnerApi.Services
                     }, memoryPollCts.Token);
                 }
 
-                
                 bool exited = false;
                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
                 {
                     try
                     {
-                        
                         await process.WaitForExitAsync(cts.Token);
                         exited = !memoryLimitExceeded; 
                     }

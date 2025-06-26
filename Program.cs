@@ -16,8 +16,6 @@ builder.Configuration.AddJsonFile("appsettings.json",
         optional: false,
         reloadOnChange: true);
 
-
-
 var configuredLanguage = builder.Configuration.GetValue<string>("Execution:Language")?.ToLowerInvariant() ?? "c";
 var workingDirectory = builder.Configuration.GetValue<string>("Execution:WorkingDirectory") ?? "/sandbox";
 
@@ -26,14 +24,9 @@ if (string.IsNullOrEmpty(configuredLanguage))
     throw new InvalidOperationException("Execution:Language configuration is required.");
 }
 
-
-
 if (!Directory.Exists(workingDirectory)) Directory.CreateDirectory(workingDirectory);
 
-
-
 builder.Services.AddProblemDetails();
-
 
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
@@ -46,7 +39,6 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
     });
 });
-
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -105,9 +97,8 @@ builder.Services.AddSingleton(sp =>
     var connectionString = configuration.GetValue<string>("AzureStorage:ConnectionString");
     if (string.IsNullOrEmpty(connectionString))
     {
-        
         var cwd = System.Environment.CurrentDirectory;
-        
+
         var appSettingsPath = System.IO.Path.Combine(cwd, "appsettings.json");
         var appSettingsExists = System.IO.File.Exists(appSettingsPath);
 
@@ -121,16 +112,7 @@ builder.Services.AddSingleton(sp =>
     return new BlobServiceClient(connectionString);
 });
 
-
-
 var app = builder.Build();
-
-
-
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(options => options.SwaggerEndpoint("/swagger/v1/swagger.json", $"Runner API ({configuredLanguage}) v1"));
-}
 
 app.UseExceptionHandler(exceptionHandlerApp =>
 {
@@ -156,15 +138,8 @@ app.UseExceptionHandler(exceptionHandlerApp =>
     });
 });
 
-
-
 app.UseAuthentication();
 app.UseAuthorization();
-
-
-
-
-
 app.MapGet("/", () => $"Generic Runner API ({configuredLanguage}) - Running")
     .ExcludeFromDescription(); 
 
@@ -239,7 +214,6 @@ app.MapPost("/execute", async (
         });
     }
 
-    
     try
     {
         endpointLogger.LogInformation("Calling batch evaluation logic for language {Language}", request.Language);

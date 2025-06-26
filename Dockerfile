@@ -58,7 +58,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     diffutils \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user and sandbox directory (can be repetitive, consider a common base if stages get complex)
 ARG USER_UID=1001
 ARG USER_GID=1001
 RUN groupadd --gid $USER_GID coder && \
@@ -67,7 +66,6 @@ RUN groupadd --gid $USER_GID coder && \
     chown coder:coder /sandbox
 
 WORKDIR /app
-# Copy appsettings.json (respecting your multiple copies)
 COPY appsettings.json /app/appsettings.json
 COPY appsettings.json /app/publish/appsettings.json
 COPY appsettings.json /sandbox/appsettings.json
@@ -75,7 +73,6 @@ COPY appsettings.json /source/appsettings.json
 COPY appsettings.json /appsettings.json
 COPY appsettings.json /home/appsettings.json
 
-# Copy the published ASP.NET Core application from the build stage
 COPY --from=build-dotnet-api /app/publish .
 
 USER coder
@@ -129,7 +126,7 @@ ENV ASPNETCORE_URLS=http://+:5000 \
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
 
 
-# --- NEW: Final Stage for Rust Runner ---
+# --- Final Stage for Rust Runner ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS rust-runner
 LABEL runner.language="rust"
 
@@ -179,7 +176,7 @@ ENV ASPNETCORE_URLS=http://+:5000 \
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
 
 
-# --- NEW: Final Stage for Go Runner ---
+# --- Final Stage for Go Runner ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS go-runner
 LABEL runner.language="go"
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -98,8 +98,6 @@ namespace GenericRunnerApi.Services
             if (exitCode == 0 && File.Exists(localExecPath)) 
             {
                 _logger.LogInformation("Rust compilation successful for {LocalCodePath}. Executable at {LocalExecPath}", localCodePath, localExecPath);
-                
-                
                 return (true, null, DEFAULT_OUTPUT_EXEC_NAME, workingDirectory, compileOutput);
             }
             else

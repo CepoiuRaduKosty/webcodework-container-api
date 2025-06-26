@@ -32,7 +32,6 @@ namespace GenericRunnerApi.Services
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
             try
             {
-                
                 string contentToWrite = codeContent;
                 if (!string.IsNullOrEmpty(contentToWrite) && contentToWrite[0] == '\uFEFF')
                 {
@@ -66,12 +65,9 @@ namespace GenericRunnerApi.Services
             string localExecPath = Path.Combine(workingDirectory, DEFAULT_OUTPUT_EXEC_NAME);
             if (File.Exists(localExecPath)) File.Delete(localExecPath);
 
-            
-            
             string compileArgs = $"build -o \"{localExecPath}\" \"{localCodePath}\"";
             _logger.LogInformation("Compiling Go code: {GoCommand} {Arguments}", GO_COMMAND, compileArgs);
 
-            
             var (exitCode, stdOut, stdErr, _, _, _) = await _processRunner.RunProcessAsync(
                 GO_COMMAND, 
                 compileArgs,

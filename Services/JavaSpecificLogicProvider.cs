@@ -159,18 +159,13 @@ namespace GenericRunnerApi.Services
                     workingDirectory,
                     currentLocalInputPath,
                     timeLimitForTimeoutCmd + 5, 
-                    tcData.MaxRamMB + 64 
-                                         
-                                         
+                    tcData.MaxRamMB + 64                    
                 );
 
                 tcResult.Stdout = runStdOut.TrimEnd('\r', '\n');
                 tcResult.Stderr = runStdErr.TrimEnd('\r', '\n');
                 tcResult.DurationMs = durationMs;
                 tcResult.ExitCode = runExitCode;
-                
-
-                
                 
                 if (memoryLimitExceededByProcessPolling || (runStdErr.Contains("java.lang.OutOfMemoryError")))
                 {

@@ -75,8 +75,6 @@ namespace GenericRunnerApi.Services
 
             try
             {
-                
-
                 await File.WriteAllTextAsync(currentLocalInputPath, tcData.InputContent, Encoding.UTF8);
                 await File.WriteAllTextAsync(currentLocalExpectedOutputPath, tcData.ExpectedOutputContent, Encoding.UTF8);
 
@@ -107,7 +105,6 @@ namespace GenericRunnerApi.Services
                 }
                 else
                 {
-                    
                     if (CompareOutputs(runStdOut, tcData.ExpectedOutputContent))
                     {
                         tcResult.Status = EvaluationStatus.Accepted;

@@ -4,8 +4,6 @@ using System.Diagnostics;
 using System.Text;
 using WebCodeWorkExecutor.Services;
 
-
-
 namespace GenericRunnerApi.Services
 {
     public class MainEvaluationLogic : ICodeEvaluationLogic
