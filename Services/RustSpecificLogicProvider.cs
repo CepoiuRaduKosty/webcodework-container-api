@@ -29,7 +29,8 @@ namespace GenericRunnerApi.Services
         public async Task<(bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? responseIfFailure)> TryCreateCodeFile(
             string codeContent,
             List<TestCaseEvaluationData> testCasesData,
-            string workingDirectory)
+            string workingDirectory,
+            int submissionId)
         {
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
             try
@@ -51,6 +52,7 @@ namespace GenericRunnerApi.Services
                 {
                     CompilationSuccess = false,
                     CompilerOutput = "Internal error: Failed to write solution code for evaluation.",
+                    SubmissionId = submissionId,
                     TestCaseResults = testCasesData.Select(tc => new TestCaseResult
                     {
                         TestCaseId = tc.TestCaseId,
@@ -66,12 +68,13 @@ namespace GenericRunnerApi.Services
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) 
+            string? localCodePath,
+            int submissionId) 
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
                 _logger.LogError("Rust code file path is null, empty, or file does not exist for compilation: {LocalCodePath}", localCodePath);
-                var errorResponse = new BatchExecuteResponse { CompilationSuccess = false, CompilerOutput = "Internal Error: Code file not found for compilation." };
+                var errorResponse = new BatchExecuteResponse { SubmissionId = submissionId, CompilationSuccess = false, CompilerOutput = "Internal Error: Code file not found for compilation." };
                 errorResponse.TestCaseResults = testCasesData.Select(tc => new TestCaseResult { TestCaseId = tc.TestCaseId, Status = EvaluationStatus.CompileError, Message = "Code file missing." }).ToList();
                 return (false, errorResponse, null, null, errorResponse.CompilerOutput ?? string.Empty);
             }
@@ -107,6 +110,7 @@ namespace GenericRunnerApi.Services
                 {
                     CompilationSuccess = false,
                     CompilerOutput = compileOutput,
+                    SubmissionId = submissionId,
                     TestCaseResults = testCasesData.Select(tc => new TestCaseResult
                     {
                         TestCaseId = tc.TestCaseId,

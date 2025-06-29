@@ -4,7 +4,7 @@ WORKDIR /source
 
 COPY *.csproj .
 COPY . .
-RUN dotnet publish -o /app/publish
+RUN dotnet publish InternalApi.csproj -o /app/publish
 
 
 # --- Final Stage for C Runner ---
@@ -28,15 +28,15 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/publish/appsettings.json
-COPY appsettings.json /sandbox/appsettings.json
-COPY appsettings.json /source/appsettings.json
-COPY appsettings.json /appsettings.json
-COPY appsettings.json /home/appsettings.json
 COPY --from=build-dotnet-api /app/publish .
 
+RUN chown -R root:root /app 
+RUN chmod -R 755 /app 
+# r-x for others
+
+
 USER coder
-WORKDIR /sandbox
+WORKDIR /app
 EXPOSE 5000
 
 ENV ASPNETCORE_URLS=http://+:5000 \
@@ -67,16 +67,16 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/publish/appsettings.json
-COPY appsettings.json /sandbox/appsettings.json
-COPY appsettings.json /source/appsettings.json
-COPY appsettings.json /appsettings.json
-COPY appsettings.json /home/appsettings.json
+
+RUN chown -R root:root /app 
+RUN chmod -R 755 /app 
+# r-x for others
+
 
 COPY --from=build-dotnet-api /app/publish .
 
 USER coder
-WORKDIR /sandbox
+WORKDIR /app
 
 EXPOSE 5000
 
@@ -105,16 +105,16 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/publish/appsettings.json
-COPY appsettings.json /sandbox/appsettings.json
-COPY appsettings.json /source/appsettings.json
-COPY appsettings.json /appsettings.json
-COPY appsettings.json /home/appsettings.json
+
+RUN chown -R root:root /app 
+RUN chmod -R 755 /app 
+# r-x for others
+
 
 COPY --from=build-dotnet-api /app/publish .
 
 USER coder
-WORKDIR /sandbox
+WORKDIR /app
 
 EXPOSE 5000
 
@@ -156,16 +156,15 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/publish/appsettings.json
-COPY appsettings.json /sandbox/appsettings.json
-COPY appsettings.json /source/appsettings.json
-COPY appsettings.json /appsettings.json
-COPY appsettings.json /home/appsettings.json
 COPY --from=build-dotnet-api /app/publish .
 
+RUN chown -R root:root /app 
+RUN chmod -R 755 /app 
+# r-x for others
+
+
 USER coder
-WORKDIR /sandbox
+WORKDIR /app
 EXPOSE 5000
 
 ENV ASPNETCORE_URLS=http://+:5000 \
@@ -195,19 +194,15 @@ RUN groupadd --gid $USER_GID coder && \
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/appsettings.json
-COPY appsettings.json /app/publish/appsettings.json
-COPY appsettings.json /sandbox/appsettings.json
-COPY appsettings.json /source/appsettings.json
-COPY appsettings.json /appsettings.json
-COPY appsettings.json /home/appsettings.json
 COPY --from=build-dotnet-api /app/publish .
 
-COPY --from=build-dotnet-api /app/publish .
+RUN chown -R root:root /app 
+RUN chmod -R 755 /app 
+# r-x for others
+
 
 USER coder
-WORKDIR /sandbox
+WORKDIR /app
 
 EXPOSE 5000
 

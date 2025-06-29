@@ -16,7 +16,8 @@ namespace WebCodeWorkExecutor.Services
         Task<BatchExecuteResponse> EvaluateBatchAsync(
             string codeContent,
             List<TestCaseEvaluationData> testCasesData,
-            string workingDirectory
+            string workingDirectory,
+            int submissionId
         );
     }
 }

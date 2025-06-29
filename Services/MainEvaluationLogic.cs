@@ -21,18 +21,22 @@ namespace GenericRunnerApi.Services
         public async Task<BatchExecuteResponse> EvaluateBatchAsync(
             string codeContent,
             List<TestCaseEvaluationData> testCasesData,
-            string workingDirectory)
+            string workingDirectory,
+            int submissionId)
         {
-            (bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? codeFileNotCreatedResponse) = await _languageSpecificLogic.TryCreateCodeFile(codeContent, testCasesData, workingDirectory);
+            (bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? codeFileNotCreatedResponse) = await _languageSpecificLogic.TryCreateCodeFile(codeContent, testCasesData, workingDirectory, submissionId);
             if (!isCodeFileCreated)
             {
                 return codeFileNotCreatedResponse!;
             }
 
-            var batchResponse = new BatchExecuteResponse();
+            var batchResponse = new BatchExecuteResponse
+            {
+                SubmissionId = submissionId
+            };
 
             _logger.LogInformation("Compiling {CodeFile}...", codeFileName);
-            (bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput) = await _languageSpecificLogic.TryCompiling(testCasesData, workingDirectory, localCodePath);
+            (bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput) = await _languageSpecificLogic.TryCompiling(testCasesData, workingDirectory, localCodePath, submissionId);
             if (!isCompiled)
             {
                 return notCompiledError!;

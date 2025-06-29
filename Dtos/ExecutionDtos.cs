@@ -32,6 +32,8 @@ namespace WebCodeWorkExecutor.Dtos
         [Required]
         public string CodeFilePath { get; set; } = string.Empty;
 
+        public required int SubmissionId { get; set; }
+
         [Required]
         [MinLength(1, ErrorMessage = "At least one test case must be provided.")]
         public List<BatchTestCaseItem> TestCases { get; set; } = new List<BatchTestCaseItem>();
@@ -55,6 +57,7 @@ namespace WebCodeWorkExecutor.Dtos
         [Required]
         public bool CompilationSuccess { get; set; }
         public string? CompilerOutput { get; set; }
+        public required int SubmissionId { get; set; }
         public List<TestCaseResult> TestCaseResults { get; set; } = new List<TestCaseResult>();
     }
 

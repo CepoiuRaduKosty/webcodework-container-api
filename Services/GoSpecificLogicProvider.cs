@@ -27,7 +27,8 @@ namespace GenericRunnerApi.Services
         public async Task<(bool isCodeFileCreated, string? codeFileName, string? localCodePath, BatchExecuteResponse? responseIfFailure)> TryCreateCodeFile(
             string codeContent,
             List<TestCaseEvaluationData> testCasesData,
-            string workingDirectory)
+            string workingDirectory,
+            int submissionId)
         {
             string localCodePathLocal = Path.Combine(workingDirectory, DEFAULT_SOURCE_FILE_NAME);
             try
@@ -44,7 +45,7 @@ namespace GenericRunnerApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to write Go solution code to local file {LocalCodePath}", localCodePathLocal);
-                var batchResponse = new BatchExecuteResponse {/* ... error details ... */ };
+                var batchResponse = new BatchExecuteResponse { SubmissionId = submissionId };
                 return (false, null, null, batchResponse);
             }
             return (true, DEFAULT_SOURCE_FILE_NAME, localCodePathLocal, null);
@@ -53,12 +54,13 @@ namespace GenericRunnerApi.Services
         public async Task<(bool isCompiled, BatchExecuteResponse? notCompiledError, string? outputExeName, string? localExePath, string compilerOutput)> TryCompiling(
             List<TestCaseEvaluationData> testCasesData,
             string workingDirectory,
-            string? localCodePath) 
+            string? localCodePath,
+            int submissionId) 
         {
             if (string.IsNullOrEmpty(localCodePath) || !File.Exists(localCodePath))
             {
                 _logger.LogError("Go code file path is null, empty, or file does not exist for compilation: {LocalCodePath}", localCodePath);
-                var errorResponse = new BatchExecuteResponse { /* ... error details ... */ };
+                var errorResponse = new BatchExecuteResponse { SubmissionId = submissionId };
                 return (false, errorResponse, null, null, errorResponse.CompilerOutput ?? string.Empty);
             }
 
@@ -91,6 +93,7 @@ namespace GenericRunnerApi.Services
                 {
                     CompilationSuccess = false,
                     CompilerOutput = compileOutput,
+                    SubmissionId = submissionId,
                     TestCaseResults = testCasesData.Select(tc => new TestCaseResult
                     {
                         TestCaseId = tc.TestCaseId,
