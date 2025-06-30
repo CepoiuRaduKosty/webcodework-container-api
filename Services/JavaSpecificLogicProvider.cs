@@ -161,7 +161,7 @@ namespace GenericRunnerApi.Services
                     timeoutCommand,
                     timeoutArgs,
                     workingDirectory,
-                    currentLocalInputPath,
+                    tcData.InputContent,
                     timeLimitForTimeoutCmd + 5, 
                     tcData.MaxRamMB + 64                    
                 );

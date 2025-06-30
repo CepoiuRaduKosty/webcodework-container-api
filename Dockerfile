@@ -41,6 +41,7 @@ EXPOSE 5000
 
 ENV ASPNETCORE_URLS=http://+:5000 \
     Execution__Language="c" \
+    TMPDIR="/sandbox" \
     DOTNET_RUNNING_IN_CONTAINER=true 
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
@@ -82,6 +83,7 @@ EXPOSE 5000
 
 ENV ASPNETCORE_URLS=http://+:5000 \
     Execution__Language="python" \
+    TMPDIR="/sandbox" \
     DOTNET_RUNNING_IN_CONTAINER=true
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
@@ -121,6 +123,7 @@ EXPOSE 5000
 ENV ASPNETCORE_URLS=http://+:5000 \
     Execution__Language="java" \
     DOTNET_RUNNING_IN_CONTAINER=true \
+    TMPDIR="/sandbox" \
     JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64" 
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
@@ -170,6 +173,7 @@ EXPOSE 5000
 ENV ASPNETCORE_URLS=http://+:5000 \
     Execution__Language="rust" \
     DOTNET_RUNNING_IN_CONTAINER=true \
+    TMPDIR="/sandbox" \
     PATH="/home/coder/.cargo/bin:/usr/local/cargo/bin:${PATH}"
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]
@@ -190,7 +194,8 @@ ARG USER_GID=1001
 RUN groupadd --gid $USER_GID coder && \
     useradd --uid $USER_UID --gid $USER_GID -m coder && \
     mkdir /sandbox && \
-    chown coder:coder /sandbox
+    chown coder:coder /sandbox && \
+    chmod -R 777 /sandbox
 
 WORKDIR /app
 COPY appsettings.json /app/appsettings.json
@@ -210,6 +215,8 @@ ENV ASPNETCORE_URLS=http://+:5000 \
     Execution__Language="go" \
     DOTNET_RUNNING_IN_CONTAINER=true \
     ASPNETCORE_ENVIRONMENT=Production \
+    TMPDIR="/sandbox" \
+    GOCACHE="/sandbox/go-build-cache" \
     PATH="${PATH}:/usr/lib/go/bin"
 
 ENTRYPOINT ["dotnet", "/app/InternalApi.dll"]

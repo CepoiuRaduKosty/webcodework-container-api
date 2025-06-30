@@ -13,6 +13,8 @@ builder.Configuration.AddJsonFile("appsettings.json",
         optional: false,
         reloadOnChange: true);
 
+Directory.CreateDirectory("/sandbox/tmpdir");
+
 var configuredLanguage = builder.Configuration.GetValue<string>("Execution:Language")?.ToLowerInvariant()!;
 var workingDirectory = builder.Configuration.GetValue<string>("Execution:WorkingDirectory")!;
 
